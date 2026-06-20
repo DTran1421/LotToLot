@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Tracking - Catalog</title>
+<style>
+  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px;}
+  .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .masthead h1{margin:0 0 4px;font-size:18px;}
+  .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
+  .masthead a{color:#cfe0f0;font-size:12px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--navy);}
+  .grid{display:grid;gap:10px;}
+  .grid.cols-5{grid-template-columns:1.6fr 1fr 1fr 1fr 1fr;}
+  label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+  input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;}
+  button{padding:9px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  button.secondary{background:#fff;color:var(--navy);border:1px solid var(--line);}
+  button.danger{background:#fff;color:var(--bad);border:1px solid #e3b3af;}
+  .row-actions{display:flex;gap:8px;margin-top:12px;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
+  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
+  .small{font-size:12px;color:var(--muted);}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;}
+  .toolbar input{width:280px;}
+  .actions-cell button{padding:4px 9px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <h1>Catalog</h1>
+      <p>Instruments, material types, and items used by the shipment form dropdowns.</p>
+    </div>
+    <a href="/">&larr; Back to shipment form</a>
+  </div>
+
+  <div class="card">
+    <h2 id="formTitle">Add new item</h2>
+    <input type="hidden" id="editId">
+    <div class="grid cols-5">
+      <div><label>Instrument</label><input id="f_analyzer" list="instrument-list" placeholder="e.g. Beckman Coulter DxC 700 AU"></div>
+      <div><label>Material type</label><input id="f_category" list="category-list" placeholder="e.g. Reagent"></div>
+      <div><label>Item</label><input id="f_item" placeholder="e.g. Albumin"></div>
+      <div><label>Manufacturer ref #</label><input id="f_manufacturer_ref" placeholder="e.g. OSR6102"></div>
+      <div><label>McKesson ref #</label><input id="f_mckesson_ref" placeholder="optional"></div>
+    </div>
+    <datalist id="instrument-list"></datalist>
+    <datalist id="category-list"></datalist>
+    <div class="row-actions">
+      <button onclick="save()">Save</button>
+      <button class="secondary" onclick="resetForm()">Clear / new entry</button>
+    </div>
+    <p class="small" id="formStatus" style="margin-top:8px;"></p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Filter by instrument, material type, item, or reference #...">
+    </div>
+    <table>
+      <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Actions</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var allRows = [];
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function render(){
+  const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const filtered = allRows.filter(function(r){
+    if(!filterText) return true;
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'')).toLowerCase();
+    return haystack.indexOf(filterText) !== -1;
+  });
+
+  document.getElementById('rows').innerHTML = filtered.map(function(r){
+    return '<tr>' +
+      '<td>' + escapeHtml(r.analyzer) + '</td>' +
+      '<td>' + escapeHtml(r.category) + '</td>' +
+      '<td>' + escapeHtml(r.item) + '</td>' +
+      '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
+      '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
+      '<td class="actions-cell">' +
+        '<button class="secondary" onclick="editRow(' + r.id + ')">Edit</button> ' +
+        '<button class="danger" onclick="deleteRow(' + r.id + ')">Delete</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  // Keep the autocomplete lists fresh
+  const instruments = [...new Set(allRows.map(function(r){ return r.analyzer; }))].sort();
+  const categories = [...new Set(allRows.map(function(r){ return r.category; }))].sort();
+  document.getElementById('instrument-list').innerHTML = instruments.map(function(i){ return '<option value="'+escapeHtml(i)+'">'; }).join('');
+  document.getElementById('category-list').innerHTML = categories.map(function(c){ return '<option value="'+escapeHtml(c)+'">'; }).join('');
+}
+
+function load(){
+  fetch('/api/catalog').then(function(r){ return r.json(); }).then(function(data){
+    allRows = data;
+    render();
+  });
+}
+
+function resetForm(){
+  document.getElementById('editId').value = '';
+  document.getElementById('formTitle').textContent = 'Add new item';
+  ['f_analyzer','f_category','f_item','f_manufacturer_ref','f_mckesson_ref'].forEach(function(id){
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('formStatus').textContent = '';
+}
+
+function editRow(id){
+  const r = allRows.find(function(x){ return x.id === id; });
+  if(!r) return;
+  document.getElementById('editId').value = r.id;
+  document.getElementById('formTitle').textContent = 'Edit: ' + r.item;
+  document.getElementById('f_analyzer').value = r.analyzer;
+  document.getElementById('f_category').value = r.category;
+  document.getElementById('f_item').value = r.item;
+  document.getElementById('f_manufacturer_ref').value = r.manufacturer_ref || '';
+  document.getElementById('f_mckesson_ref').value = r.mckesson_ref || '';
+  window.scrollTo(0,0);
+}
+
+function save(){
+  const statusEl = document.getElementById('formStatus');
+  const id = document.getElementById('editId').value;
+  const body = {
+    id: id || undefined,
+    analyzer: document.getElementById('f_analyzer').value,
+    category: document.getElementById('f_category').value,
+    item: document.getElementById('f_item').value,
+    manufacturer_ref: document.getElementById('f_manufacturer_ref').value,
+    mckesson_ref: document.getElementById('f_mckesson_ref').value
+  };
+  statusEl.textContent = 'Saving...';
+  fetch('/api/catalog', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){ statusEl.textContent = 'Error: ' + res.error; return; }
+    statusEl.textContent = 'Saved.';
+    resetForm();
+    load();
+  })
+  .catch(function(err){ statusEl.textContent = 'Error: ' + err.message; });
+}
+
+function deleteRow(id){
+  if(!confirm('Delete this catalog item? This cannot be undone.')) return;
+  fetch('/api/catalog?id=' + id, { method: 'DELETE' })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res.error){ alert('Error: ' + res.error); return; }
+      load();
+    });
+}
+
+document.getElementById('search').addEventListener('input', render);
+load();
+</script>
+</body>
+</html>

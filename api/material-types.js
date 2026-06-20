@@ -3,19 +3,16 @@ const supabase = require('./_supabase');
 module.exports = async (req, res) => {
   try {
     const instrument = req.query.instrument;
-    const category = req.query.category;
     if (!instrument) return res.status(400).json({ error: 'instrument is required' });
 
-    let query = supabase
+    const { data, error } = await supabase
       .from('catalog')
-      .select('item, category, manufacturer_ref, mckesson_ref')
+      .select('category')
       .eq('analyzer', instrument);
-    if (category) query = query.eq('category', category);
-
-    const { data, error } = await query.order('category').order('item');
     if (error) throw error;
 
-    res.status(200).json(data);
+    const categories = [...new Set(data.map((r) => r.category))].sort();
+    res.status(200).json(categories);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

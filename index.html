@@ -33,7 +33,7 @@
 <div class="wrap">
   <div class="masthead">
     <h1>New Shipment Log</h1>
-    <p>Log every reagent / calibrator / supply shipment as it arrives. New lots on reagents and calibrators are flagged automatically.</p>
+    <p>Log every shipment as it arrives. New lots on Reagents are flagged for lot-to-lot verification automatically; other material types are still logged for traceability.</p>
   </div>
   <div class="card">
     <label>Instrument</label>
@@ -41,9 +41,14 @@
       <option value="">-- choose an instrument --</option>
     </select>
 
+    <label>Material type</label>
+    <select id="materialType" disabled onchange="onMaterialTypeChange()">
+      <option value="">-- choose an instrument first --</option>
+    </select>
+
     <label>Item</label>
     <select id="item" disabled onchange="onItemChange()">
-      <option value="">-- choose an instrument first --</option>
+      <option value="">-- choose a material type first --</option>
     </select>
     <p class="ref-tag" id="refTag"></p>
 
@@ -62,11 +67,11 @@
     <button id="submitBtn" onclick="submitForm()">Log shipment</button>
     <div class="result" id="result"></div>
   </div>
-  <p class="footer-link"><a href="/browse.html">Browse data &amp; review pending verifications &rarr;</a> &middot; <a href="/tea-admin.html">Manage TEa criteria &rarr;</a></p>
+  <p class="footer-link"><a href="/browse.html">Browse data &amp; review pending verifications &rarr;</a> &middot; <a href="/tea-admin.html">Manage TEa criteria &rarr;</a> &middot; <a href="/catalog-admin.html">Manage catalog &rarr;</a></p>
 </div>
 
 <script>
-  var itemsForCurrentInstrument = [];
+  var itemsForCurrentSelection = [];
 
   fetch('/api/instruments').then(function(r){ return r.json(); }).then(function(list){
     var sel = document.getElementById('instrument');
@@ -82,32 +87,57 @@
 
   function onInstrumentChange(){
     var instrument = document.getElementById('instrument').value;
+    var mtSel = document.getElementById('materialType');
+    var itemSel = document.getElementById('item');
+    mtSel.innerHTML = '';
+    mtSel.disabled = true;
+    itemSel.innerHTML = '<option value="">-- choose a material type first --</option>';
+    itemSel.disabled = true;
+    document.getElementById('refTag').textContent = '';
+    if(!instrument){
+      mtSel.innerHTML = '<option value="">-- choose an instrument first --</option>';
+      return;
+    }
+    mtSel.innerHTML = '<option value="">Loading...</option>';
+    fetch('/api/material-types?instrument=' + encodeURIComponent(instrument))
+      .then(function(r){ return r.json(); })
+      .then(function(categories){
+        mtSel.innerHTML = '<option value="">-- choose a material type --</option>';
+        categories.forEach(function(c){
+          var opt = document.createElement('option');
+          opt.value = c; opt.textContent = c;
+          mtSel.appendChild(opt);
+        });
+        mtSel.disabled = false;
+      })
+      .catch(function(err){
+        mtSel.innerHTML = '<option value="">-- error loading material types --</option>';
+        document.getElementById('refTag').textContent = 'Error: ' + err.message;
+      });
+  }
+
+  function onMaterialTypeChange(){
+    var instrument = document.getElementById('instrument').value;
+    var category = document.getElementById('materialType').value;
     var itemSel = document.getElementById('item');
     itemSel.innerHTML = '';
     itemSel.disabled = true;
     document.getElementById('refTag').textContent = '';
-    if(!instrument){
-      itemSel.innerHTML = '<option value="">-- choose an instrument first --</option>';
+    if(!category){
+      itemSel.innerHTML = '<option value="">-- choose a material type first --</option>';
       return;
     }
     itemSel.innerHTML = '<option value="">Loading...</option>';
-    fetch('/api/items?instrument=' + encodeURIComponent(instrument))
+    fetch('/api/items?instrument=' + encodeURIComponent(instrument) + '&category=' + encodeURIComponent(category))
       .then(function(r){ return r.json(); })
       .then(function(items){
-        itemsForCurrentInstrument = items;
+        itemsForCurrentSelection = items;
         itemSel.innerHTML = '<option value="">-- choose an item --</option>';
-        var currentGroup = null, group = null;
         items.forEach(function(it, idx){
-          if(it.category !== currentGroup){
-            currentGroup = it.category;
-            group = document.createElement('optgroup');
-            group.label = currentGroup;
-            itemSel.appendChild(group);
-          }
           var opt = document.createElement('option');
           opt.value = String(idx);
           opt.textContent = it.item;
-          group.appendChild(opt);
+          itemSel.appendChild(opt);
         });
         itemSel.disabled = false;
       })
@@ -120,31 +150,36 @@
   function onItemChange(){
     var idx = document.getElementById('item').value;
     var refTag = document.getElementById('refTag');
-    if(idx === '' || !itemsForCurrentInstrument[idx]){
+    if(idx === '' || !itemsForCurrentSelection[idx]){
       refTag.textContent = '';
       return;
     }
-    var it = itemsForCurrentInstrument[idx];
-    refTag.textContent = 'Reference #: ' + (it.reference_number || '--') + '  \u00b7  Category: ' + it.category;
+    var it = itemsForCurrentSelection[idx];
+    var parts = [];
+    if(it.manufacturer_ref) parts.push('Mfr ref: ' + it.manufacturer_ref);
+    if(it.mckesson_ref) parts.push('McKesson ref: ' + it.mckesson_ref);
+    refTag.textContent = parts.join('  \u00b7  ') || 'No reference numbers on file';
   }
 
   function submitForm(){
     var btn = document.getElementById('submitBtn');
     var resultEl = document.getElementById('result');
     var instrument = document.getElementById('instrument').value;
+    var category = document.getElementById('materialType').value;
     var idx = document.getElementById('item').value;
 
-    if(!instrument || idx === '' || !itemsForCurrentInstrument[idx]){
+    if(!instrument || !category || idx === '' || !itemsForCurrentSelection[idx]){
       resultEl.className = 'result show new';
-      resultEl.innerHTML = 'Please choose an instrument and an item.';
+      resultEl.innerHTML = 'Please choose an instrument, material type, and item.';
       return;
     }
-    var it = itemsForCurrentInstrument[idx];
+    var it = itemsForCurrentSelection[idx];
     var payload = {
       instrument: instrument,
-      category: it.category,
+      category: category,
       item: it.item,
-      ref: it.reference_number,
+      manufacturerRef: it.manufacturer_ref,
+      mckessonRef: it.mckesson_ref,
       lotNumber: document.getElementById('lotNumber').value,
       expirationDate: document.getElementById('expirationDate').value,
       receivedBy: document.getElementById('receivedBy').value,
@@ -177,7 +212,7 @@
       if(res.isNewLot && res.flaggable){
         msg = 'NEW LOT DETECTED &mdash; flagged for lot-to-lot verification. Previous lot on file: ' + res.previousLot;
       } else if(res.isNewLot){
-        msg = "New lot logged. This category doesn't require a lot-to-lot comparison, but it's on record. Previous lot: " + res.previousLot;
+        msg = "New lot logged. This material type doesn't require a lot-to-lot comparison, but it's on record. Previous lot: " + res.previousLot;
       } else {
         msg = 'Same lot as on file &mdash; logged as a routine restock.';
       }

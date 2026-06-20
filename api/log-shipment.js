@@ -1,6 +1,9 @@
 const supabase = require('./_supabase');
 
-const FLAGGABLE_CATEGORIES = ['Reagent', 'Calibrator'];
+// Per lab policy: lot-to-lot comparisons are only performed on Reagents.
+// Other categories (Calibrator, Control, Chemical, Equipment, Misc, Linearity)
+// still get logged for traceability, but won't flag "Pending verification."
+const FLAGGABLE_CATEGORIES = ['Reagent'];
 const COMPARISON_TOOL_URL = 'https://lot-to-lot.vercel.app/compare.html';
 
 function buildComparisonUrl(instrument, category, item, oldLot, newLot) {
@@ -17,7 +20,10 @@ function buildComparisonUrl(instrument, category, item, oldLot, newLot) {
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   try {
-    const { instrument, category, item, ref, lotNumber, expirationDate, receivedBy, comments } = req.body;
+    const {
+      instrument, category, item, manufacturerRef, mckessonRef,
+      lotNumber, expirationDate, receivedBy, comments,
+    } = req.body;
     if (!instrument || !item || !lotNumber) {
       return res.status(400).json({ error: 'instrument, item, and lotNumber are required' });
     }
@@ -43,7 +49,8 @@ module.exports = async (req, res) => {
         instrument,
         category,
         item,
-        reference_number: ref || null,
+        manufacturer_ref: manufacturerRef || null,
+        mckesson_ref: mckessonRef || null,
         current_lot: lotNumber,
         last_received_date: new Date().toISOString(),
         status: 'N/A - initial lot on file',
@@ -91,7 +98,8 @@ module.exports = async (req, res) => {
       instrument,
       category,
       item,
-      reference_number: ref || null,
+      manufacturer_ref: manufacturerRef || null,
+      mckesson_ref: mckessonRef || null,
       lot_number: lotNumber,
       expiration_date: expirationDate || null,
       previous_lot: previousLot,

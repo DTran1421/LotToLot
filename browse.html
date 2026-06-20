@@ -98,10 +98,10 @@ var currentTable = 'reagent_master';
 var currentRows = [];
 
 var COLUMN_LABELS = {
-  reagent_master: ['instrument','category','item','reference_number','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
+  reagent_master: ['instrument','category','item','manufacturer_ref','mckesson_ref','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
   lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified'],
-  receiving_log: ['logged_at','received_by','instrument','category','item','reference_number','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
-  catalog: ['analyzer','item','category','reference_number']
+  receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
+  catalog: ['analyzer','item','category','manufacturer_ref','mckesson_ref']
 };
 
 // Which tables get the Instrument/Item filter dropdowns + inline Approve column.
@@ -147,6 +147,8 @@ function niceLabel(col){
   if(col === 'old_lot') return 'Old Lot';
   if(col === 'new_lot') return 'New Lot';
   if(col === 'pass') return 'Result';
+  if(col === 'manufacturer_ref') return 'Mfr Ref #';
+  if(col === 'mckesson_ref') return 'McKesson Ref #';
   return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
