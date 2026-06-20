@@ -51,7 +51,7 @@ function reportAnalyteSectionHtml(c) {
     '<h3>' + (c.analyteName || '(unnamed analyte)') + ' <span class="pill ' + (calc.pass ? 'pass' : 'fail') + '">' + (calc.pass ? 'PASS' : 'FAIL') + '</span></h3>' +
     '<table class="meta-table">' +
     '<tr><td class="k">Old lot / New lot</td><td>' + (c.oldLot || '--') + ' &rarr; ' + (c.newLot || '--') + '</td></tr>' +
-    '<tr><td class="k">CLIA TEa applied</td><td>' + reportTeaDescription(c) + ' &nbsp; <span class="small">(' + c.teaSource + ')</span></td></tr>' +
+    '<tr><td class="k">TEa applied</td><td>' + reportTeaDescription(c) + ' &nbsp; <span class="small">(' + c.teaSource + ')</span></td></tr>' +
     '<tr><td class="k">n / mean old / mean new</td><td>' + calc.n + ' &nbsp; / &nbsp; ' + calc.meanOld.toFixed(2) + ' ' + c.unit + ' &nbsp; / &nbsp; ' + calc.meanNew.toFixed(2) + ' ' + c.unit + '</td></tr>' +
     '<tr><td class="k">Mean bias</td><td>' + (calc.meanBiasPct >= 0 ? '+' : '') + calc.meanBiasPct.toFixed(1) + '% (SD of differences ' + calc.sdDiff.toFixed(2) + ' ' + c.unit + ')</td></tr>' +
     '<tr><td class="k">Largest single-sample % diff</td><td>' + calc.maxAbsPct.toFixed(1) + '% &nbsp; (' + calc.flaggedCount + ' of ' + calc.n + ' sample(s) exceeded TEa individually)</td></tr>' +
@@ -75,11 +75,14 @@ function buildReportContentHtml(job, cards, reviewInfo) {
       '<tr><td class="k">Date reviewed</td><td>' + (reviewInfo.dateVerified ? new Date(reviewInfo.dateVerified).toLocaleString() : '--') + '</td></tr>'
     : '';
 
+  const commentsRow = (job.comments && job.comments.trim())
+    ? '<tr><td class="k">Comments</td><td>' + job.comments + '</td></tr>'
+    : '';
+
   const sigGrid = reviewInfo
     ? '<div class="sig-grid"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + ' / ' + (job.date || '--') + '</div></div>' +
       '<div><div class="sig-line">Reviewed by / date</div><div class="small" style="margin-top:2px;">' + (reviewInfo.verifiedBy || '--') + ' / ' + (reviewInfo.dateVerified ? new Date(reviewInfo.dateVerified).toLocaleDateString() : '--') + '</div></div></div>'
-    : '<div class="sig-grid" style="grid-template-columns:1fr;max-width:340px;"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + ' / ' + (job.date || '--') + '</div></div></div>' +
-      '<p class="small" style="margin-top:10px;">Preview -- reviewer sign-off and the final PDF happen at approval time.</p>';
+    : '<p class="small">Tested by: ' + (job.performedBy || '--') + ' &middot; ' + (job.date || '--') + '</p>';
 
   return '<div class="masthead"><h1>Lot-to-Lot Comparison Report' + (reviewInfo ? ' (Final - Reviewed)' : ' (Preview - Pending Review)') + '</h1>' +
     '<p style="color:#c9d8e6;">' + (job.instrument || 'Instrument not specified') + ' &middot; ' + (job.date || 'date not specified') + '</p></div>' +
@@ -89,7 +92,7 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     '<tr><td class="k">Reason for lot change</td><td>' + (job.reason || '--') + '</td></tr>' +
     '<tr><td class="k">Tested by</td><td>' + (job.performedBy || '--') + '</td></tr>' +
     reviewedRow +
-    '<tr><td class="k">Comments</td><td>' + (job.comments || '--') + '</td></tr>' +
+    commentsRow +
     '</table>' +
     '<div class="verdict-banner ' + (overallPass ? 'pass' : 'fail') + '" style="margin-top:6px;">' +
     'Overall verdict: ' + (overallPass ? 'ACCEPTABLE -- new lot may be released into service' : 'NOT ACCEPTABLE -- one or more analytes failed CLIA acceptance criteria') +
