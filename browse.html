@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Tracking - Browse</title>
+<style>
+  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px;}
+  .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .masthead h1{margin:0 0 4px;font-size:18px;}
+  .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
+  .masthead a{color:#cfe0f0;font-size:12px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+  .tab{padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;}
+  .toolbar input{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:260px;}
+  .count{font-size:12px;color:var(--muted);}
+  .table-scroll{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
+  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;background:#fff;}
+  tr:hover td{background:#f9fafb;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
+  .pill.pending{background:var(--neutral-bg);color:var(--muted);}
+  .pill.review{background:#fff7e6;color:#a86c00;}
+  .pill.fail{background:var(--bad-bg);color:var(--bad);}
+  .pill.verified{background:var(--good-bg);color:var(--good);}
+  .empty{text-align:center;color:var(--muted);padding:30px 0;}
+  a.pdf-link{color:var(--navy);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <h1>Lot Tracking &mdash; Browse</h1>
+      <p>Read-only view of the Catalog, Reagent Master, and Receiving Log tables.</p>
+    </div>
+    <a href="/">&larr; Back to shipment form</a>
+  </div>
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-table="reagent_master">Reagent Master</div>
+      <div class="tab" data-table="receiving_log">Receiving Log</div>
+      <div class="tab" data-table="catalog">Catalog</div>
+    </div>
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Filter rows...">
+      <div class="count" id="count"></div>
+    </div>
+    <div class="table-scroll">
+      <table id="dataTable">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none;">No rows.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var currentTable = 'reagent_master';
+var currentRows = [];
+
+var COLUMN_LABELS = {
+  reagent_master: ['instrument','category','item','reference_number','current_lot','last_received_date','status','performed_by','report_pdf_url','verified_by','date_verified','notes'],
+  receiving_log: ['logged_at','received_by','instrument','category','item','reference_number','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
+  catalog: ['analyzer','item','category','reference_number']
+};
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function formatCell(col, value){
+  if(value === null || value === undefined || value === '') return '<span style="color:#bbb;">--</span>';
+  if(col === 'status'){
+    let cls = 'pending';
+    if(value === 'Pending Review') cls = 'review';
+    else if(value === 'Failed - needs investigation') cls = 'fail';
+    else if(value === 'Verified') cls = 'verified';
+    return '<span class="pill ' + cls + '">' + escapeHtml(value) + '</span>';
+  }
+  if(col === 'report_pdf_url'){
+    return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">View PDF</a>';
+  }
+  if(col === 'is_new_lot'){
+    return value ? 'Yes' : 'No';
+  }
+  if(col === 'logged_at' || col === 'last_received_date' || col === 'date_verified'){
+    try { return new Date(value).toLocaleString(); } catch(e){ return escapeHtml(value); }
+  }
+  return escapeHtml(value);
+}
+
+function niceLabel(col){
+  return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+}
+
+function render(){
+  const cols = COLUMN_LABELS[currentTable];
+  const head = document.getElementById('tableHead');
+  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + '</tr>';
+
+  const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const filtered = currentRows.filter(function(row){
+    if(!filterText) return true;
+    return cols.some(function(c){
+      const v = row[c];
+      return v != null && String(v).toLowerCase().indexOf(filterText) !== -1;
+    });
+  });
+
+  const body = document.getElementById('tableBody');
+  body.innerHTML = filtered.map(function(row){
+    return '<tr>' + cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+
+  document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
+  document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
+}
+
+function load(table){
+  currentTable = table;
+  document.getElementById('tableBody').innerHTML = '<tr><td>Loading...</td></tr>';
+  fetch('/api/browse?table=' + encodeURIComponent(table))
+    .then(function(r){ return r.json(); })
+    .then(function(rows){
+      if(rows.error){ throw new Error(rows.error); }
+      currentRows = rows;
+      render();
+    })
+    .catch(function(err){
+      document.getElementById('tableBody').innerHTML = '<tr><td>Error: ' + escapeHtml(err.message) + '</td></tr>';
+    });
+}
+
+document.querySelectorAll('.tab').forEach(function(tab){
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    tab.classList.add('active');
+    load(tab.dataset.table);
+  });
+});
+
+document.getElementById('search').addEventListener('input', render);
+
+load(currentTable);
+</script>
+</body>
+</html>
