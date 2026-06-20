@@ -9,7 +9,7 @@
 <style>
   :root{--navy:#0f2a47;--navy-light:#1c3f63;--bg:#f4f6f8;--card:#ffffff;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;overflow-x:hidden;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
   .wrap{max-width:1700px;margin:0 auto;padding:18px;}
   .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
   .masthead h1{margin:0 0 4px;font-size:18px;}
@@ -245,7 +245,7 @@ function preview(row, tr){
 
     msgEl.textContent = 'Generating preview...';
     window.scrollTo(0, 0);
-    return html2pdf().set({ margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob');
+    return html2pdf().set({ margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0, windowWidth: 980, width: 980 } }).from(target).toPdf().output('blob');
   })
   .then(function(pdfBlob){
     if(!pdfBlob || pdfBlob.size < 2000){
@@ -306,7 +306,7 @@ function approve(row, tr){
     const filename = ('lot_to_lot_FINAL_' + (historyRow.instrument||'report') + '_' + (historyRow.item||'') + '_' + Date.now()).replace(/[^a-zA-Z0-9_\-]+/g,'_') + '.pdf';
 
     window.scrollTo(0, 0);
-    return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob')
+    return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0, windowWidth: 980, width: 980 } }).from(target).toPdf().output('blob')
       .then(function(pdfBlob){
         if(!pdfBlob || pdfBlob.size < 2000){
           throw new Error('Generated PDF looks empty (' + (pdfBlob?pdfBlob.size:0) + ' bytes). Try again.');
