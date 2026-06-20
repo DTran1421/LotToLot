@@ -290,7 +290,7 @@ function lookupTea(name){
 const SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
 
-let job = {instrument:"",performedBy:"",reviewedBy:"",date:"",reason:"New lot received (routine)",comments:""};
+let job = {instrument:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
 let cardIdSeed = 1;
 let analytes = [];
 
@@ -375,7 +375,6 @@ function renderJobCard(){
         </select>
       </div>
       <div class="field"><label>Tested by</label><input type="text" data-job="performedBy" value="${job.performedBy}"></div>
-      <div class="field"><label>Reviewed by</label><input type="text" data-job="reviewedBy" value="${job.reviewedBy}"></div>
       <div class="field"><label>Comments</label><input type="text" data-job="comments" value="${job.comments}"></div>
     </div>
   </div>`;
@@ -859,7 +858,6 @@ function buildReport(){
         <tr><td class="k">Date performed</td><td>${job.date||'--'}</td></tr>
         <tr><td class="k">Reason for lot change</td><td>${job.reason||'--'}</td></tr>
         <tr><td class="k">Tested by</td><td>${job.performedBy||'--'}</td></tr>
-        <tr><td class="k">Reviewed by</td><td>${job.reviewedBy||'--'}</td></tr>
         <tr><td class="k">Comments</td><td>${job.comments||'--'}</td></tr>
       </table>
       <div class="verdict-banner ${overallPass?'pass':'fail'}" style="margin-top:6px;">
@@ -870,16 +868,16 @@ function buildReport(){
     ${sections}
     <div class="card">
       <p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), acceptable performance criteria enforced by PT providers beginning January 1, 2025, unless overridden above with a lab-defined limit. Data extracted from uploaded printouts via AI was not independently re-verified by this tool against the source document -- confirm accuracy before filing as a quality record.</p>
-      <div class="sig-grid">
+      <div class="sig-grid" style="grid-template-columns:1fr;max-width:340px;">
         <div><div class="sig-line">Tested by / date</div></div>
-        <div><div class="sig-line">Reviewed by / date</div></div>
       </div>
+      <p class="small" style="margin-top:10px;">Reviewer sign-off happens after this report is saved -- see the review page once it's submitted.</p>
     </div>
     </div>
     <div class="no-print" style="text-align:center;margin-top:16px;">
       <button class="btn" onclick="window.print()">Print / save as PDF</button>
       <button class="btn secondary" onclick="downloadReport()">Download standalone HTML</button>
-      <button class="btn secondary" onclick="saveReportToSheet()">Save report to Lot Tracking sheet</button>
+      <button class="btn secondary" onclick="saveReportToSheet()">Save report &amp; submit for review</button>
     </div>
     <p class="small no-print" id="saveReportStatus" style="text-align:center;margin-top:10px;"></p>
   `;
