@@ -4,10 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lot Tracking - Browse</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+<script src="/report.js"></script>
 <style>
-  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  :root{--navy:#0f2a47;--navy-light:#1c3f63;--bg:#f4f6f8;--card:#ffffff;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
   .wrap{max-width:1700px;margin:0 auto;padding:18px;}
   .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
   .masthead h1{margin:0 0 4px;font-size:18px;}
@@ -17,9 +19,11 @@
   .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
   .tab{padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted);}
   .tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
-  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;}
-  .toolbar input{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:260px;}
-  .count{font-size:12px;color:var(--muted);}
+  .toolbar{display:flex;justify-content:flex-start;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;}
+  .toolbar input, .toolbar select{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;}
+  .toolbar input{width:240px;}
+  .toolbar select{width:180px;}
+  .count{font-size:12px;color:var(--muted);margin-left:auto;}
   .table-scroll{overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;word-break:break-word;}
@@ -30,12 +34,28 @@
   .pill.review{background:#fff7e6;color:#a86c00;}
   .pill.fail{background:var(--bad-bg);color:var(--bad);}
   .pill.verified{background:var(--good-bg);color:var(--good);}
+  .pill.pass{background:var(--good-bg);color:var(--good);}
   .empty{text-align:center;color:var(--muted);padding:30px 0;}
   a.pdf-link{color:var(--navy);}
   .approve-cell input{width:110px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12px;}
   .approve-cell button{padding:5px 10px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:4px;}
   .approve-cell button:disabled{opacity:.5;}
-  .approve-msg{font-size:11px;color:var(--muted);margin-top:3px;}
+  .approve-msg{font-size:11px;color:var(--muted);margin-top:3px;max-width:160px;}
+
+  /* Report-rendering classes -- must match compare.html so the offscreen
+     PDF render at approval time looks identical to the on-screen preview. */
+  .report-section{margin-bottom:22px;}
+  .report-section h3{color:var(--navy);font-size:14.5px;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:10px;}
+  .meta-table{width:100%;border-collapse:collapse;margin-bottom:10px;}
+  .meta-table td{border:none;padding:3px 0;font-size:13px;}
+  .meta-table td.k{color:var(--muted);width:160px;font-weight:600;}
+  .verdict-banner{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:700;}
+  .verdict-banner.pass{background:var(--good-bg);color:var(--good);}
+  .verdict-banner.fail{background:var(--bad-bg);color:var(--bad);}
+  .small{font-size:12px;color:var(--muted);}
+  .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px;}
+  .sig-line{border-top:1px solid #333;margin-top:34px;padding-top:4px;font-size:11.5px;color:var(--muted);}
+  #pdf-render-target{position:absolute;left:-9999px;top:0;width:980px;}
 </style>
 </head>
 <body>
@@ -43,18 +63,21 @@
   <div class="masthead">
     <div>
       <h1>Lot Tracking &mdash; Browse</h1>
-      <p>Read-only view of the Catalog, Reagent Master, and Receiving Log tables. Approve pending verifications inline on the Reagent Master tab.</p>
+      <p>Catalog, Reagent Master, Receiving Log, and full Lot-to-Lot History. Approve pending verifications inline.</p>
     </div>
     <a href="/">&larr; Back to shipment form</a>
   </div>
   <div class="card">
     <div class="tabs">
       <div class="tab active" data-table="reagent_master">Reagent Master</div>
+      <div class="tab" data-table="lot_to_lot_reports">Lot-to-Lot History</div>
       <div class="tab" data-table="receiving_log">Receiving Log</div>
       <div class="tab" data-table="catalog">Catalog</div>
     </div>
     <div class="toolbar">
       <input type="text" id="search" placeholder="Filter rows...">
+      <select id="filterInstrument"><option value="">All instruments</option></select>
+      <select id="filterItem"><option value="">All items</option></select>
       <div class="count" id="count"></div>
     </div>
     <div class="table-scroll">
@@ -66,6 +89,7 @@
     </div>
   </div>
 </div>
+<div id="pdf-render-target"></div>
 
 <script>
 var currentTable = 'reagent_master';
@@ -73,9 +97,14 @@ var currentRows = [];
 
 var COLUMN_LABELS = {
   reagent_master: ['instrument','category','item','reference_number','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
+  lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified'],
   receiving_log: ['logged_at','received_by','instrument','category','item','reference_number','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
   catalog: ['analyzer','item','category','reference_number']
 };
+
+// Which tables get the Instrument/Item filter dropdowns + inline Approve column.
+var FILTERABLE_TABLES = ['reagent_master','lot_to_lot_reports'];
+var APPROVABLE_TABLES = ['reagent_master','lot_to_lot_reports'];
 
 function escapeHtml(s){
   const d = document.createElement('div');
@@ -92,7 +121,10 @@ function formatCell(col, value){
     else if(value === 'Verified') cls = 'verified';
     return '<span class="pill ' + cls + '">' + escapeHtml(value) + '</span>';
   }
-  if(col === 'report_pdf_url'){
+  if(col === 'pass'){
+    return '<span class="pill ' + (value ? 'pass' : 'fail') + '">' + (value ? 'PASS' : 'FAIL') + '</span>';
+  }
+  if(col === 'report_pdf_url' || col === 'pdf_url'){
     return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">View PDF</a>';
   }
   if(col === 'comparison_url'){
@@ -101,7 +133,7 @@ function formatCell(col, value){
   if(col === 'is_new_lot'){
     return value ? 'Yes' : 'No';
   }
-  if(col === 'logged_at' || col === 'last_received_date' || col === 'date_verified'){
+  if(col === 'logged_at' || col === 'last_received_date' || col === 'date_verified' || col === 'submitted_at'){
     try { return new Date(value).toLocaleString(); } catch(e){ return escapeHtml(value); }
   }
   return escapeHtml(value);
@@ -109,7 +141,10 @@ function formatCell(col, value){
 
 function niceLabel(col){
   if(col === 'comparison_url') return 'Verification Link';
-  if(col === 'report_pdf_url') return 'Report PDF';
+  if(col === 'report_pdf_url' || col === 'pdf_url') return 'Report PDF';
+  if(col === 'old_lot') return 'Old Lot';
+  if(col === 'new_lot') return 'New Lot';
+  if(col === 'pass') return 'Result';
   return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
@@ -117,14 +152,35 @@ function canApprove(row){
   return row.status === 'Pending Review' || row.status === 'Failed - needs investigation';
 }
 
+function populateFilterDropdowns(){
+  const instSel = document.getElementById('filterInstrument');
+  const itemSel = document.getElementById('filterItem');
+  const instruments = [...new Set(currentRows.map(function(r){ return r.instrument; }))].sort();
+  const items = [...new Set(currentRows.map(function(r){ return r.item; }))].sort();
+  const prevInst = instSel.value, prevItem = itemSel.value;
+  instSel.innerHTML = '<option value="">All instruments</option>' + instruments.map(function(i){ return '<option value="'+escapeHtml(i)+'">'+escapeHtml(i)+'</option>'; }).join('');
+  itemSel.innerHTML = '<option value="">All items</option>' + items.map(function(i){ return '<option value="'+escapeHtml(i)+'">'+escapeHtml(i)+'</option>'; }).join('');
+  instSel.value = instruments.indexOf(prevInst) !== -1 ? prevInst : '';
+  itemSel.value = items.indexOf(prevItem) !== -1 ? prevItem : '';
+}
+
 function render(){
   const cols = COLUMN_LABELS[currentTable];
-  const showApprove = currentTable === 'reagent_master';
+  const showApprove = APPROVABLE_TABLES.indexOf(currentTable) !== -1;
+  const showFilters = FILTERABLE_TABLES.indexOf(currentTable) !== -1;
+  document.getElementById('filterInstrument').style.display = showFilters ? '' : 'none';
+  document.getElementById('filterItem').style.display = showFilters ? '' : 'none';
+
   const head = document.getElementById('tableHead');
   head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
 
   const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const instFilter = showFilters ? document.getElementById('filterInstrument').value : '';
+  const itemFilter = showFilters ? document.getElementById('filterItem').value : '';
+
   const filtered = currentRows.filter(function(row){
+    if(instFilter && row.instrument !== instFilter) return false;
+    if(itemFilter && row.item !== itemFilter) return false;
     if(!filterText) return true;
     return cols.some(function(c){
       const v = row[c];
@@ -155,6 +211,12 @@ function render(){
   document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
 }
 
+/**
+ * Approving generates the FINAL, reviewer-signed PDF right here in the
+ * browser (using the same report.js module the comparison tool uses for
+ * its preview), uploads it, then tells the API to finalize both the
+ * history row and the current-state row.
+ */
 function approve(row, tr){
   const nameInput = tr.querySelector('[data-name-input]');
   const msgEl = tr.querySelector('[data-msg]');
@@ -165,13 +227,66 @@ function approve(row, tr){
     return;
   }
   btn.disabled = true;
-  msgEl.textContent = 'Approving...';
-  fetch('/api/approve', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ instrument: row.instrument, category: row.category, item: row.item, verifiedBy: verifiedBy })
+
+  const getHistoryRow = (currentTable === 'lot_to_lot_reports')
+    ? Promise.resolve(row)
+    : fetch('/api/latest-pending?instrument=' + encodeURIComponent(row.instrument) + '&category=' + encodeURIComponent(row.category) + '&item=' + encodeURIComponent(row.item))
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if(d.error) throw new Error(d.error); return d; });
+
+  msgEl.textContent = 'Loading report data...';
+
+  getHistoryRow.then(function(historyRow){
+    if(!historyRow.report_data){
+      throw new Error('This report has no stored data to regenerate a PDF from.');
+    }
+    const job = historyRow.report_data.job;
+    const card = historyRow.report_data.card;
+    const dateVerified = new Date().toISOString();
+    const reviewInfo = { verifiedBy: verifiedBy, dateVerified: dateVerified };
+
+    const target = document.getElementById('pdf-render-target');
+    target.innerHTML = buildReportContentHtml(job, [card], reviewInfo);
+
+    msgEl.textContent = 'Generating final PDF...';
+
+    const filename = ('lot_to_lot_FINAL_' + (historyRow.instrument||'report') + '_' + (historyRow.item||'') + '_' + Date.now()).replace(/[^a-zA-Z0-9_\-]+/g,'_') + '.pdf';
+
+    return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 2 } }).from(target).toPdf().output('blob')
+      .then(function(pdfBlob){
+        if(!pdfBlob || pdfBlob.size < 2000){
+          throw new Error('Generated PDF looks empty (' + (pdfBlob?pdfBlob.size:0) + ' bytes). Try again.');
+        }
+        msgEl.textContent = 'Uploading PDF...';
+        return fetch(SUPABASE_URL + '/storage/v1/object/reports/' + filename, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+            'Content-Type': 'application/pdf'
+          },
+          body: pdfBlob
+        }).then(function(uploadRes){
+          if(!uploadRes.ok){
+            return uploadRes.text().then(function(t){ throw new Error('Upload failed: ' + t); });
+          }
+          const pdfUrl = SUPABASE_URL + '/storage/v1/object/public/reports/' + filename;
+          msgEl.textContent = 'Finalizing...';
+          return fetch('/api/approve', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+              historyId: historyRow.id,
+              instrument: historyRow.instrument,
+              category: historyRow.category,
+              item: historyRow.item,
+              verifiedBy: verifiedBy,
+              pdfUrl: pdfUrl
+            })
+          }).then(function(r){ return r.json(); });
+        });
+      });
   })
-  .then(function(r){ return r.json(); })
   .then(function(res){
     if(res.error){
       msgEl.textContent = 'Error: ' + res.error;
@@ -194,6 +309,7 @@ function load(table){
     .then(function(rows){
       if(rows.error){ throw new Error(rows.error); }
       currentRows = rows;
+      populateFilterDropdowns();
       render();
     })
     .catch(function(err){
@@ -210,6 +326,11 @@ document.querySelectorAll('.tab').forEach(function(tab){
 });
 
 document.getElementById('search').addEventListener('input', render);
+document.getElementById('filterInstrument').addEventListener('change', render);
+document.getElementById('filterItem').addEventListener('change', render);
+
+const SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
 
 load(currentTable);
 </script>

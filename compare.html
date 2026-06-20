@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>Lot-to-Lot Comparison Report Builder</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+<script src="/report.js"></script>
 <style>
   :root{
     --navy:#0f2a47;
@@ -287,8 +288,6 @@ function lookupTea(name){
 // Leave blank to disable that feature entirely (everything else still works).
 // This page is served from the same Vercel project as the API routes, so
 // calls to /api/... are same-origin -- no more CORS workarounds needed.
-const SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
 
 let job = {instrument:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
 let cardIdSeed = 1;
@@ -826,62 +825,10 @@ function onAction(e){
 function buildReport(){
   analytes.forEach(c=>calcCard(c.id));
   render();
-  const overallPass = analytes.length>0 && analytes.every(c=>c.calc && c.calc.pass);
-  const anyMissing = analytes.some(c=>!c.calc);
-
-  const sections = analytes.map(c=>{
-    if(!c.calc) return `<div class="report-section"><h3>${c.analyteName||'(unnamed analyte)'}</h3><p class="small">No data entered for this analyte -- omitted from the verdict.</p></div>`;
-    const calc = c.calc;
-    const rowsHtml = c.rows.map(r=>{
-      const oldV=parseFloat(r.oldVal), newV=parseFloat(r.newVal);
-      if(isNaN(oldV)||isNaN(newV)) return '';
-      const diff=newV-oldV, pct=oldV!==0?(diff/oldV*100):0;
-      const allowed = allowableDiff(c, oldV);
-      const flag = allowed!==null && Math.abs(diff)>allowed;
-      return `<tr style="${flag?'background:#fcebea;':''}"><td>${r.sampleId}</td><td>${oldV}</td><td>${newV}</td><td>${diff.toFixed(2)}</td><td>${pct.toFixed(1)}%</td></tr>`;
-    }).join('');
-    return `<div class="report-section">
-      <h3>${c.analyteName||'(unnamed analyte)'} <span class="pill ${calc.pass?'pass':'fail'}">${calc.pass?'PASS':'FAIL'}</span></h3>
-      <table class="meta-table">
-        <tr><td class="k">Old lot / New lot</td><td>${c.oldLot||'--'} &rarr; ${c.newLot||'--'}</td></tr>
-        <tr><td class="k">CLIA TEa applied</td><td>${teaDescription(c)} &nbsp; <span class="small">(${c.teaSource})</span></td></tr>
-        <tr><td class="k">n / mean old / mean new</td><td>${calc.n} &nbsp; / &nbsp; ${calc.meanOld.toFixed(2)} ${c.unit} &nbsp; / &nbsp; ${calc.meanNew.toFixed(2)} ${c.unit}</td></tr>
-        <tr><td class="k">Mean bias</td><td>${calc.meanBiasPct>=0?'+':''}${calc.meanBiasPct.toFixed(1)}% (SD of differences ${calc.sdDiff.toFixed(2)} ${c.unit})</td></tr>
-        <tr><td class="k">Largest single-sample % diff</td><td>${calc.maxAbsPct.toFixed(1)}% &nbsp; (${calc.flaggedCount} of ${calc.n} sample(s) exceeded TEa individually)</td></tr>
-      </table>
-      <table>
-        <thead><tr><th>Sample ID</th><th>Old lot</th><th>New lot</th><th>Diff</th><th>% diff</th></tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-    </div>`;
-  }).join('');
 
   const reportHtml = `
     <div id="report-content">
-    <div class="masthead"><h1>Lot-to-Lot Comparison Report</h1>
-      <p style="color:#c9d8e6;">${job.instrument||'Instrument not specified'} &middot; ${job.date||'date not specified'}</p>
-    </div>
-    <div class="card">
-      <table class="meta-table">
-        <tr><td class="k">Instrument</td><td>${job.instrument||'--'}</td></tr>
-        <tr><td class="k">Date performed</td><td>${job.date||'--'}</td></tr>
-        <tr><td class="k">Reason for lot change</td><td>${job.reason||'--'}</td></tr>
-        <tr><td class="k">Tested by</td><td>${job.performedBy||'--'}</td></tr>
-        <tr><td class="k">Comments</td><td>${job.comments||'--'}</td></tr>
-      </table>
-      <div class="verdict-banner ${overallPass?'pass':'fail'}" style="margin-top:6px;">
-        Overall verdict: ${overallPass?'ACCEPTABLE -- new lot may be released into service':'NOT ACCEPTABLE -- one or more analytes failed CLIA acceptance criteria'}
-        ${anyMissing?' (one or more analyte cards had no data and were excluded from this verdict)':''}
-      </div>
-    </div>
-    ${sections}
-    <div class="card">
-      <p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), acceptable performance criteria enforced by PT providers beginning January 1, 2025, unless overridden above with a lab-defined limit. Data extracted from uploaded printouts via AI was not independently re-verified by this tool against the source document -- confirm accuracy before filing as a quality record.</p>
-      <div class="sig-grid" style="grid-template-columns:1fr;max-width:340px;">
-        <div><div class="sig-line">Tested by / date</div></div>
-      </div>
-      <p class="small" style="margin-top:10px;">Reviewer sign-off happens after this report is saved -- see the review page once it's submitted.</p>
-    </div>
+    ${buildReportContentHtml(job, analytes, null)}
     </div>
     <div class="no-print" style="text-align:center;margin-top:16px;">
       <button class="btn" onclick="window.print()">Print / save as PDF</button>
@@ -927,62 +874,34 @@ function applyUrlParams(){
   }
 }
 
-/* ---------------------------- Save report (PDF -> Supabase Storage, then update the database) ---------------------------- */
+/* ---------------------------- Save report (submits data for review -- final PDF is generated at approval time) ---------------------------- */
 function saveReportToSheet(){
   const statusEl = document.getElementById('saveReportStatus');
 
-  const results = analytes
-    .filter(c => c.calc && c.category && job.instrument)
-    .map(c => ({ instrument: job.instrument, category: c.category, item: c.analyteName, pass: c.calc.pass }));
-
-  if(results.length === 0){
-    statusEl.textContent = "None of these analytes were launched from a Lot Tracking link, so there's nothing to write back. You can still print or download the report above.";
+  const qualifying = analytes.filter(c => c.calc && c.category && job.instrument);
+  if(qualifying.length === 0){
+    statusEl.textContent = "None of these analytes have a Category set, so there's nothing to write back. Set Category on each card above, or arrive here via a Start verification link.";
     return;
   }
 
-  const filename = ('lot_to_lot_' + (job.instrument||'report') + '_' + (job.date||new Date().toISOString().slice(0,10))).replace(/[^a-zA-Z0-9_\-]+/g,'_') + '_' + Date.now() + '.pdf';
-  const reportContentEl = document.getElementById('report-content');
+  statusEl.textContent = 'Submitting for review...';
 
-  statusEl.textContent = 'Generating PDF...';
-
-  html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 2 } }).from(reportContentEl).toPdf().output('blob')
-    .then(function(pdfBlob){
-      if(!pdfBlob || pdfBlob.size < 2000){
-        throw new Error('Generated PDF looks empty (' + (pdfBlob ? pdfBlob.size : 0) + ' bytes) -- not uploading. Try again, or use Print / save as PDF instead.');
-      }
-      statusEl.textContent = 'Uploading PDF...';
-      return fetch(SUPABASE_URL + '/storage/v1/object/reports/' + filename, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-          'Content-Type': 'application/pdf'
-        },
-        body: pdfBlob
-      });
-    })
-    .then(function(uploadRes){
-      if(!uploadRes.ok){
-        return uploadRes.text().then(function(t){ throw new Error('PDF upload failed: ' + t); });
-      }
-      const pdfUrl = SUPABASE_URL + '/storage/v1/object/public/reports/' + filename;
-      statusEl.textContent = 'Updating Lot Tracking records...';
-      return fetch('/api/save-report', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ performedBy: job.performedBy || '', pdfUrl: pdfUrl, results: results })
-      }).then(function(r){ return r.json(); });
-    })
-    .then(function(data){
-      if(data.error){
-        statusEl.textContent = 'Error: ' + data.error;
-        return;
-      }
-      statusEl.innerHTML = 'Saved. <a href="'+data.pdfUrl+'" target="_blank">View the PDF</a> &mdash; status updated for: ' + results.map(r=>r.item).join(', ') + '. Approve from the <a href="/admin.html">review page</a> once you\'ve checked it.';
-    })
-    .catch(function(err){
-      statusEl.textContent = 'Error: ' + err.message;
-    });
+  fetch('/api/save-report', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ job: job, cards: qualifying })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    if(data.error){
+      statusEl.textContent = 'Error: ' + data.error;
+      return;
+    }
+    statusEl.innerHTML = 'Submitted for review: ' + data.items.join(', ') + '. The final, signed PDF will be generated when your supervisor approves it on the <a href="/browse.html">browse page</a>.';
+  })
+  .catch(function(err){
+    statusEl.textContent = 'Error: ' + err.message;
+  });
 }
 
 applyUrlParams();

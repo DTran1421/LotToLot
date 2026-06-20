@@ -7,6 +7,7 @@ const TABLES = {
   catalog: { order: [['analyzer', false], ['item', false]], limit: 1000 },
   reagent_master: { order: [['instrument', false], ['item', false]], limit: 1000 },
   receiving_log: { order: [['logged_at', true]], limit: 500 },
+  lot_to_lot_reports: { order: [['submitted_at', true]], limit: 1000 },
 };
 
 module.exports = async (req, res) => {
