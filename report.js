@@ -94,5 +94,5 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     (anyMissing ? ' (one or more analyte cards had no data and were excluded from this verdict)' : '') +
     '</div></div>' +
     sections +
-    '<footer class="report-footer"><p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), effective January 1, 2025, unless overridden above with a lab-defined limit.</p></footer>';
+    '<footer class="report-footer"><p class="small">TEa criteria are sourced per analyte as shown above (CLIA, CAP, EFLM biological variation, manufacturer, or lab-defined).</p></footer>';
 }

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Tracking - TEa Criteria</title>
+<style>
+  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px;}
+  .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .masthead h1{margin:0 0 4px;font-size:18px;}
+  .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
+  .masthead a{color:#cfe0f0;font-size:12px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--navy);}
+  .grid{display:grid;gap:10px;}
+  .grid.cols-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+  .grid.cols-3{grid-template-columns:1fr 1fr 1fr;}
+  label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+  input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;}
+  button{padding:9px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  button.secondary{background:#fff;color:var(--navy);border:1px solid var(--line);}
+  button.danger{background:#fff;color:var(--bad);border:1px solid #e3b3af;}
+  .row-actions{display:flex;gap:8px;margin-top:12px;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
+  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .pill.CLIA{background:#eef2f6;color:#5f7385;}
+  .pill.CAP{background:#e7f5ee;color:#1b7a4d;}
+  .pill.EFLM{background:#fff7e6;color:#a86c00;}
+  .pill.Manufacturer{background:#fcebea;color:#b3261e;}
+  .pill.Lab-defined,.pill.Other{background:#eef0fb;color:#3a3fa0;}
+  .small{font-size:12px;color:var(--muted);}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;}
+  .toolbar input{width:280px;}
+  .actions-cell button{padding:4px 9px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <h1>TEa Criteria</h1>
+      <p>CLIA, CAP, EFLM biological variation, manufacturer, or lab-defined limits used by the comparison tool.</p>
+    </div>
+    <a href="/">&larr; Back to shipment form</a>
+  </div>
+
+  <div class="card">
+    <h2 id="formTitle">Add new entry</h2>
+    <input type="hidden" id="editId">
+    <div class="grid cols-4">
+      <div><label>Analyte name</label><input id="f_name" placeholder="e.g. Cystatin C"></div>
+      <div><label>Unit</label><input id="f_unit" placeholder="e.g. mg/L"></div>
+      <div><label>Aliases (comma-separated)</label><input id="f_aliases" placeholder="e.g. cysc, cystatin"></div>
+      <div><label>Source</label>
+        <select id="f_source">
+          <option>CLIA</option><option>CAP</option><option>EFLM</option><option>Manufacturer</option><option>Lab-defined</option><option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid cols-4" style="margin-top:10px;">
+      <div><label>Mode</label>
+        <select id="f_mode">
+          <option value="pct">% only</option>
+          <option value="fixed">Fixed only</option>
+          <option value="greater">Fixed or % (greater)</option>
+        </select>
+      </div>
+      <div><label>TEa %</label><input id="f_pct" type="number" step="any"></div>
+      <div><label>TEa fixed amount</label><input id="f_fixed" type="number" step="any"></div>
+      <div><label>Fixed unit</label><input id="f_fixed_unit" placeholder="e.g. mg/dL"></div>
+    </div>
+    <div class="grid cols-3" style="margin-top:10px;">
+      <div><label>Source detail</label><input id="f_source_detail" placeholder="e.g. EFLM Biological Variation Database, 2024 update"></div>
+      <div><label>Notes</label><input id="f_notes" placeholder="optional"></div>
+    </div>
+    <div class="row-actions">
+      <button onclick="save()">Save</button>
+      <button class="secondary" onclick="resetForm()">Clear / new entry</button>
+    </div>
+    <p class="small" id="formStatus" style="margin-top:8px;"></p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Filter by analyte, alias, or source...">
+    </div>
+    <table>
+      <thead><tr><th>Analyte</th><th>Aliases</th><th>Limit</th><th>Source</th><th>Source detail</th><th>Notes</th><th>Actions</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var allRows = [];
+
+function teaDescription(r){
+  if(r.mode === 'fixed') return '\u00b1 ' + r.fixed + ' ' + (r.fixed_unit||'');
+  if(r.mode === 'pct') return '\u00b1 ' + r.pct + '%';
+  if(r.mode === 'greater') return '\u00b1 ' + r.fixed + ' ' + (r.fixed_unit||'') + ' or \u00b1 ' + r.pct + '%';
+  return '--';
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function render(){
+  const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const filtered = allRows.filter(function(r){
+    if(!filterText) return true;
+    const haystack = (r.analyte_name + ' ' + (r.aliases||[]).join(' ') + ' ' + r.source).toLowerCase();
+    return haystack.indexOf(filterText) !== -1;
+  });
+
+  document.getElementById('rows').innerHTML = filtered.map(function(r){
+    return '<tr>' +
+      '<td><strong>' + escapeHtml(r.analyte_name) + '</strong><br><span class="small">' + escapeHtml(r.unit||'') + '</span></td>' +
+      '<td class="small">' + escapeHtml((r.aliases||[]).join(', ')) + '</td>' +
+      '<td>' + escapeHtml(teaDescription(r)) + '</td>' +
+      '<td><span class="pill ' + escapeHtml(r.source) + '">' + escapeHtml(r.source) + '</span></td>' +
+      '<td class="small">' + escapeHtml(r.source_detail||'') + '</td>' +
+      '<td class="small">' + escapeHtml(r.notes||'') + '</td>' +
+      '<td class="actions-cell">' +
+        '<button class="secondary" onclick="editRow(' + r.id + ')">Edit</button> ' +
+        '<button class="danger" onclick="deleteRow(' + r.id + ')">Delete</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function load(){
+  fetch('/api/tea-criteria').then(function(r){ return r.json(); }).then(function(data){
+    allRows = data;
+    render();
+  });
+}
+
+function resetForm(){
+  document.getElementById('editId').value = '';
+  document.getElementById('formTitle').textContent = 'Add new entry';
+  ['f_name','f_unit','f_aliases','f_pct','f_fixed','f_fixed_unit','f_source_detail','f_notes'].forEach(function(id){
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('f_mode').value = 'pct';
+  document.getElementById('f_source').value = 'CLIA';
+  document.getElementById('formStatus').textContent = '';
+}
+
+function editRow(id){
+  const r = allRows.find(function(x){ return x.id === id; });
+  if(!r) return;
+  document.getElementById('editId').value = r.id;
+  document.getElementById('formTitle').textContent = 'Edit: ' + r.analyte_name;
+  document.getElementById('f_name').value = r.analyte_name;
+  document.getElementById('f_unit').value = r.unit || '';
+  document.getElementById('f_aliases').value = (r.aliases||[]).join(', ');
+  document.getElementById('f_source').value = r.source;
+  document.getElementById('f_mode').value = r.mode;
+  document.getElementById('f_pct').value = r.pct === null ? '' : r.pct;
+  document.getElementById('f_fixed').value = r.fixed === null ? '' : r.fixed;
+  document.getElementById('f_fixed_unit').value = r.fixed_unit || '';
+  document.getElementById('f_source_detail').value = r.source_detail || '';
+  document.getElementById('f_notes').value = r.notes || '';
+  window.scrollTo(0,0);
+}
+
+function save(){
+  const statusEl = document.getElementById('formStatus');
+  const id = document.getElementById('editId').value;
+  const body = {
+    id: id || undefined,
+    analyte_name: document.getElementById('f_name').value,
+    unit: document.getElementById('f_unit').value,
+    aliases: document.getElementById('f_aliases').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+    source: document.getElementById('f_source').value,
+    mode: document.getElementById('f_mode').value,
+    pct: document.getElementById('f_pct').value === '' ? null : parseFloat(document.getElementById('f_pct').value),
+    fixed: document.getElementById('f_fixed').value === '' ? null : parseFloat(document.getElementById('f_fixed').value),
+    fixed_unit: document.getElementById('f_fixed_unit').value,
+    source_detail: document.getElementById('f_source_detail').value,
+    notes: document.getElementById('f_notes').value
+  };
+  statusEl.textContent = 'Saving...';
+  fetch('/api/tea-criteria', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){ statusEl.textContent = 'Error: ' + res.error; return; }
+    statusEl.textContent = 'Saved.';
+    resetForm();
+    load();
+  })
+  .catch(function(err){ statusEl.textContent = 'Error: ' + err.message; });
+}
+
+function deleteRow(id){
+  if(!confirm('Delete this TEa entry? This cannot be undone.')) return;
+  fetch('/api/tea-criteria?id=' + id, { method: 'DELETE' })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res.error){ alert('Error: ' + res.error); return; }
+      load();
+    });
+}
+
+document.getElementById('search').addEventListener('input', render);
+load();
+</script>
+</body>
+</html>

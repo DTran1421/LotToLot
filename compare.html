@@ -171,118 +171,39 @@
 
 <script>
 /* ---------------------------------------------------------------------
-   CLIA acceptable performance criteria (CMS-3355-F final rule,
-   effective 7/11/2024, enforced by PT providers 1/1/2025).
-   Source: 42 CFR 493.801-493.959 / CMS fact sheet / cross-checked
-   against published summaries. Editable per-card in the UI --
-   verify against current regs before using for a regulatory record.
+   TEa criteria now live in the tea_criteria database table (CLIA, CAP,
+   EFLM biological variation, manufacturer, or lab-defined) instead of
+   being hardcoded here. Manage entries at /tea-admin.html.
    mode: 'pct' (percent only), 'fixed' (fixed only), 'greater'
    (the larger of the fixed amount or the percent of target wins).
 --------------------------------------------------------------------- */
-const CLIA_TEA = {
-  "alanine aminotransferase":{label:"ALT",unit:"U/L",mode:"greater",pct:15,fixed:6,fixedUnit:"U/L"},
-  "albumin":{label:"Albumin",unit:"g/dL",mode:"pct",pct:8},
-  "alkaline phosphatase":{label:"ALP",unit:"U/L",mode:"pct",pct:20},
-  "amylase":{label:"Amylase",unit:"U/L",mode:"pct",pct:20},
-  "aspartate aminotransferase":{label:"AST",unit:"U/L",mode:"greater",pct:15,fixed:6,fixedUnit:"U/L"},
-  "bilirubin total":{label:"Total Bilirubin",unit:"mg/dL",mode:"greater",pct:20,fixed:0.4,fixedUnit:"mg/dL"},
-  "bnp":{label:"BNP",unit:"pg/mL",mode:"pct",pct:30},
-  "pro-bnp":{label:"Pro-BNP",unit:"pg/mL",mode:"pct",pct:30},
-  "calcium total":{label:"Calcium, total",unit:"mg/dL",mode:"fixed",fixed:1.0,fixedUnit:"mg/dL"},
-  "carbon dioxide":{label:"CO2",unit:"mmol/L",mode:"pct",pct:20},
-  "chloride":{label:"Chloride",unit:"mmol/L",mode:"pct",pct:5},
-  "cholesterol total":{label:"Cholesterol, total",unit:"mg/dL",mode:"pct",pct:10},
-  "cholesterol hdl":{label:"HDL Cholesterol",unit:"mg/dL",mode:"greater",pct:20,fixed:6,fixedUnit:"mg/dL"},
-  "cholesterol ldl direct":{label:"LDL Cholesterol (direct)",unit:"mg/dL",mode:"pct",pct:20},
-  "creatine kinase":{label:"CK",unit:"U/L",mode:"pct",pct:20},
-  "creatinine":{label:"Creatinine",unit:"mg/dL",mode:"greater",pct:10,fixed:0.2,fixedUnit:"mg/dL"},
-  "ferritin":{label:"Ferritin",unit:"ng/mL",mode:"pct",pct:20},
-  "gamma glutamyl transferase":{label:"GGT",unit:"U/L",mode:"greater",pct:15,fixed:5,fixedUnit:"U/L"},
-  "glucose":{label:"Glucose",unit:"mg/dL",mode:"greater",pct:8,fixed:6,fixedUnit:"mg/dL"},
-  "hemoglobin a1c":{label:"Hemoglobin A1c",unit:"%",mode:"pct",pct:8},
-  "iron total":{label:"Iron, total",unit:"mcg/dL",mode:"pct",pct:15},
-  "lactate dehydrogenase":{label:"LDH",unit:"U/L",mode:"pct",pct:15},
-  "magnesium":{label:"Magnesium",unit:"mg/dL",mode:"pct",pct:15},
-  "phosphorus":{label:"Phosphorus",unit:"mg/dL",mode:"greater",pct:10,fixed:0.3,fixedUnit:"mg/dL"},
-  "potassium":{label:"Potassium",unit:"mmol/L",mode:"fixed",fixed:0.3,fixedUnit:"mmol/L"},
-  "prostate specific antigen":{label:"PSA, total",unit:"ng/mL",mode:"greater",pct:20,fixed:0.2,fixedUnit:"ng/mL"},
-  "sodium":{label:"Sodium",unit:"mmol/L",mode:"fixed",fixed:4,fixedUnit:"mmol/L"},
-  "total iron binding capacity":{label:"TIBC (direct)",unit:"mcg/dL",mode:"pct",pct:20},
-  "total protein":{label:"Total Protein",unit:"g/dL",mode:"pct",pct:8},
-  "triglycerides":{label:"Triglycerides",unit:"mg/dL",mode:"pct",pct:15},
-  "troponin i":{label:"Troponin I",unit:"ng/mL",mode:"greater",pct:30,fixed:0.9,fixedUnit:"ng/mL"},
-  "troponin t":{label:"Troponin T",unit:"ng/mL",mode:"greater",pct:30,fixed:0.2,fixedUnit:"ng/mL"},
-  "urea nitrogen":{label:"BUN",unit:"mg/dL",mode:"greater",pct:9,fixed:2,fixedUnit:"mg/dL"},
-  "uric acid":{label:"Uric Acid",unit:"mg/dL",mode:"pct",pct:10},
-  "cortisol":{label:"Cortisol",unit:"mcg/dL",mode:"pct",pct:20},
-  "estradiol":{label:"Estradiol",unit:"pg/mL",mode:"pct",pct:30},
-  "folate serum":{label:"Folate, serum",unit:"ng/mL",mode:"greater",pct:30,fixed:1,fixedUnit:"ng/mL"},
-  "follicle stimulating hormone":{label:"FSH",unit:"IU/L",mode:"greater",pct:18,fixed:2,fixedUnit:"IU/L"},
-  "free thyroxine":{label:"Free T4",unit:"ng/dL",mode:"greater",pct:15,fixed:0.3,fixedUnit:"ng/dL"},
-  "human chorionic gonadotropin":{label:"hCG",unit:"mIU/mL",mode:"greater",pct:18,fixed:3,fixedUnit:"mIU/mL"},
-  "luteinizing hormone":{label:"LH",unit:"IU/L",mode:"pct",pct:20},
-  "parathyroid hormone":{label:"PTH",unit:"pg/mL",mode:"pct",pct:30},
-  "progesterone":{label:"Progesterone",unit:"ng/mL",mode:"pct",pct:25},
-  "prolactin":{label:"Prolactin",unit:"ng/mL",mode:"pct",pct:20},
-  "testosterone":{label:"Testosterone",unit:"ng/dL",mode:"greater",pct:30,fixed:20,fixedUnit:"ng/dL"},
-  "t3 uptake":{label:"T3 Uptake",unit:"%",mode:"pct",pct:18},
-  "triiodothyronine":{label:"Total T3",unit:"ng/dL",mode:"pct",pct:30},
-  "thyroid stimulating hormone":{label:"TSH",unit:"mIU/L",mode:"greater",pct:20,fixed:0.2,fixedUnit:"mIU/L"},
-  "thyroxine":{label:"Total T4",unit:"mcg/dL",mode:"greater",pct:20,fixed:1.0,fixedUnit:"mcg/dL"},
-  "vitamin b12":{label:"Vitamin B12",unit:"pg/mL",mode:"greater",pct:25,fixed:30,fixedUnit:"pg/mL"},
-  "c-reactive protein hs":{label:"CRP (high sensitivity)",unit:"mg/L",mode:"greater",pct:30,fixed:1,fixedUnit:"mg/L"},
-  "iga":{label:"IgA",unit:"mg/dL",mode:"pct",pct:20},
-  "igg":{label:"IgG",unit:"mg/dL",mode:"pct",pct:20},
-  "igm":{label:"IgM",unit:"mg/dL",mode:"pct",pct:20},
-  "ige":{label:"IgE",unit:"IU/mL",mode:"pct",pct:20},
-  "erythrocyte count":{label:"RBC",unit:"x10^6/uL",mode:"pct",pct:4},
-  "hematocrit":{label:"Hematocrit",unit:"%",mode:"pct",pct:4},
-  "hemoglobin":{label:"Hemoglobin",unit:"g/dL",mode:"pct",pct:4},
-  "leukocyte count":{label:"WBC",unit:"x10^3/uL",mode:"pct",pct:10},
-  "platelet count":{label:"Platelets",unit:"x10^3/uL",mode:"pct",pct:25},
-  "fibrinogen":{label:"Fibrinogen",unit:"mg/dL",mode:"pct",pct:20},
-  "prothrombin time":{label:"PT",unit:"sec",mode:"pct",pct:15},
-  "partial thromboplastin time":{label:"PTT",unit:"sec",mode:"pct",pct:15}
-};
-const CLIA_ALIASES = {
-  "sgpt":"alanine aminotransferase","alt":"alanine aminotransferase",
-  "sgot":"aspartate aminotransferase","ast":"aspartate aminotransferase",
-  "alp":"alkaline phosphatase","amy":"amylase",
-  "tbili":"bilirubin total","bilirubin":"bilirubin total","t bili":"bilirubin total",
-  "ca":"calcium total","calcium":"calcium total",
-  "co2":"carbon dioxide","tco2":"carbon dioxide",
-  "cl":"chloride","chol":"cholesterol total","cholesterol":"cholesterol total",
-  "hdl":"cholesterol hdl","hdl-c":"cholesterol hdl","hdl cholesterol":"cholesterol hdl",
-  "ldl":"cholesterol ldl direct","ldl-c":"cholesterol ldl direct","ldl cholesterol":"cholesterol ldl direct",
-  "ck":"creatine kinase","creat kinase":"creatine kinase",
-  "creat":"creatinine","crea":"creatinine",
-  "ferr":"ferritin","ggt":"gamma glutamyl transferase",
-  "glu":"glucose","a1c":"hemoglobin a1c","hba1c":"hemoglobin a1c",
-  "fe":"iron total","iron":"iron total",
-  "ldh":"lactate dehydrogenase","mg":"magnesium","phos":"phosphorus",
-  "k":"potassium","psa":"prostate specific antigen",
-  "na":"sodium","tibc":"total iron binding capacity",
-  "tp":"total protein","trig":"triglycerides","tg":"triglycerides",
-  "trop i":"troponin i","trop t":"troponin t",
-  "bun":"urea nitrogen","urea":"urea nitrogen","ua":"uric acid",
-  "free t4":"free thyroxine","ft4":"free thyroxine",
-  "hcg":"human chorionic gonadotropin","lh":"luteinizing hormone",
-  "pth":"parathyroid hormone","prog":"progesterone","prl":"prolactin",
-  "testo":"testosterone","total t3":"triiodothyronine","t3":"triiodothyronine",
-  "tsh":"thyroid stimulating hormone","total t4":"thyroxine","t4":"thyroxine",
-  "b12":"vitamin b12","crp":"c-reactive protein hs","hs-crp":"c-reactive protein hs",
-  "rbc":"erythrocyte count","hct":"hematocrit","hgb":"hemoglobin","hb":"hemoglobin",
-  "wbc":"leukocyte count","plt":"platelet count","fib":"fibrinogen",
-  "pt":"prothrombin time","ptt":"partial thromboplastin time","aptt":"partial thromboplastin time"
-};
-function lookupTea(name){
-  if(!name) return null;
-  let key = name.trim().toLowerCase();
-  if(CLIA_TEA[key]) return CLIA_TEA[key];
-  if(CLIA_ALIASES[key]) return CLIA_TEA[CLIA_ALIASES[key]];
-  // loose contains match
-  for(const k in CLIA_TEA){ if(k.includes(key)||key.includes(k)) return CLIA_TEA[k]; }
-  return null;
+/* ---------------------------- TEa autofill ---------------------------- */
+function applyTeaLookup(c){
+  const name = (c.analyteName || '').trim();
+  if(!name){
+    c.teaSource = '-- not matched, enter manually --';
+    render();
+    return;
+  }
+  fetch('/api/tea-lookup?analyte=' + encodeURIComponent(name))
+    .then(r => r.json())
+    .then(match => {
+      if(match && !match.error){
+        c.teaMode = match.mode;
+        c.teaPct = match.pct !== undefined ? match.pct : null;
+        c.teaFixed = match.fixed !== undefined ? match.fixed : null;
+        c.teaFixedUnit = match.fixed_unit || '';
+        c.teaSource = match.source + (match.source_detail ? ' (' + match.source_detail + ')' : '') + ' (auto-matched)';
+        if(!c.unit) c.unit = match.unit;
+      } else {
+        c.teaSource = 'No match in TEa criteria table -- enter manually, or add it via /tea-admin.html';
+      }
+      render();
+    })
+    .catch(err => {
+      c.teaSource = 'Error looking up TEa: ' + err.message;
+      render();
+    });
 }
 
 /* ---------------------------- App state ---------------------------- */
@@ -525,15 +446,23 @@ function renderAnalyteCard(c){
 }
 
 /* shared datalist for analyte autocomplete */
+let analyteDatalistCache = null;
 function analyteDatalist(){
-  const opts = Object.values(CLIA_TEA).map(v=>v.label);
   let dl = document.getElementById('analyte-list');
   if(!dl){
     dl = document.createElement('datalist');
     dl.id='analyte-list';
     document.body.appendChild(dl);
   }
-  dl.innerHTML = opts.map(o=>`<option value="${o}">`).join('');
+  if(analyteDatalistCache){
+    dl.innerHTML = analyteDatalistCache.map(o=>`<option value="${o}">`).join('');
+    return;
+  }
+  fetch('/api/tea-criteria').then(r=>r.json()).then(data=>{
+    if(!Array.isArray(data)) return;
+    analyteDatalistCache = data.map(r=>r.analyte_name);
+    dl.innerHTML = analyteDatalistCache.map(o=>`<option value="${o}">`).join('');
+  }).catch(()=>{});
 }
 
 /* ---------------------------- Calculations ---------------------------- */
@@ -688,21 +617,6 @@ function applyExtraction(id){
     applyTeaLookup(c);
   }
   render();
-}
-
-/* ---------------------------- TEa autofill ---------------------------- */
-function applyTeaLookup(c){
-  const match = lookupTea(c.analyteName);
-  if(match){
-    c.teaMode = match.mode;
-    c.teaPct = match.pct!==undefined ? match.pct : null;
-    c.teaFixed = match.fixed!==undefined ? match.fixed : null;
-    c.teaFixedUnit = match.fixedUnit||'';
-    c.teaSource = 'CLIA 2025 acceptable performance criteria (auto-matched)';
-    if(!c.unit) c.unit = match.unit;
-  } else {
-    c.teaSource = 'No CLIA match -- enter TEa manually';
-  }
 }
 
 /* ---------------------------- Event handling ---------------------------- */
