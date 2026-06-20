@@ -8,7 +8,7 @@
   :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);}
-  .wrap{max-width:1200px;margin:0 auto;padding:18px;}
+  .wrap{max-width:1700px;margin:0 auto;padding:18px;}
   .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
   .masthead h1{margin:0 0 4px;font-size:18px;}
   .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
@@ -21,8 +21,8 @@
   .toolbar input{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:260px;}
   .count{font-size:12px;color:var(--muted);}
   .table-scroll{overflow-x:auto;}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;}
-  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;word-break:break-word;}
   th{font-size:10.5px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;background:#fff;}
   tr:hover td{background:#f9fafb;}
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
@@ -68,7 +68,7 @@ var currentTable = 'reagent_master';
 var currentRows = [];
 
 var COLUMN_LABELS = {
-  reagent_master: ['instrument','category','item','reference_number','current_lot','last_received_date','status','performed_by','report_pdf_url','verified_by','date_verified','notes'],
+  reagent_master: ['instrument','category','item','reference_number','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
   receiving_log: ['logged_at','received_by','instrument','category','item','reference_number','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
   catalog: ['analyzer','item','category','reference_number']
 };
@@ -91,6 +91,9 @@ function formatCell(col, value){
   if(col === 'report_pdf_url'){
     return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">View PDF</a>';
   }
+  if(col === 'comparison_url'){
+    return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">Start verification &rarr;</a>';
+  }
   if(col === 'is_new_lot'){
     return value ? 'Yes' : 'No';
   }
@@ -101,6 +104,8 @@ function formatCell(col, value){
 }
 
 function niceLabel(col){
+  if(col === 'comparison_url') return 'Verification Link';
+  if(col === 'report_pdf_url') return 'Report PDF';
   return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
