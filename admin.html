@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Tracking - Review</title>
+<style>
+  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);}
+  .wrap{max-width:900px;margin:0 auto;padding:18px;}
+  .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;}
+  .masthead h1{margin:0 0 4px;font-size:18px;}
+  .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top;}
+  th{font-size:11px;text-transform:uppercase;color:var(--muted);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .pill.pending{background:var(--neutral-bg);color:var(--muted);}
+  .pill.review{background:#fff7e6;color:#a86c00;}
+  .pill.fail{background:var(--bad-bg);color:var(--bad);}
+  input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:140px;}
+  button{padding:7px 12px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;}
+  button:disabled{opacity:.5;}
+  .row-msg{font-size:11.5px;color:var(--muted);margin-top:4px;}
+  .empty{text-align:center;color:var(--muted);padding:30px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <h1>Lot Tracking &mdash; Review</h1>
+    <p>Pending verifications, completed comparisons awaiting your sign-off, and anything that failed.</p>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Status</th><th>Instrument</th><th>Item</th><th>Current Lot</th><th>Performed By</th><th>Report</th><th>Approve</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty" style="display:none;">Nothing pending right now.</div>
+  </div>
+</div>
+
+<script>
+function pillClass(status){
+  if(status === 'Pending Review') return 'review';
+  if(status === 'Failed - needs investigation') return 'fail';
+  return 'pending';
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : s;
+  return d.innerHTML;
+}
+
+function load(){
+  fetch('/api/pending').then(function(r){ return r.json(); }).then(function(rows){
+    const tbody = document.getElementById('rows');
+    tbody.innerHTML = '';
+    if(!rows || rows.length === 0){
+      document.getElementById('empty').style.display = 'block';
+      return;
+    }
+    document.getElementById('empty').style.display = 'none';
+    rows.forEach(function(row){
+      const tr = document.createElement('tr');
+      const reportCell = row.report_pdf_url
+        ? '<a href="' + escapeHtml(row.report_pdf_url) + '" target="_blank">View PDF</a>'
+        : '<span style="color:var(--muted);">--</span>';
+      const canApprove = row.status === 'Pending Review' || row.status === 'Failed - needs investigation';
+      tr.innerHTML =
+        '<td><span class="pill ' + pillClass(row.status) + '">' + escapeHtml(row.status) + '</span></td>' +
+        '<td>' + escapeHtml(row.instrument) + '<br><span style="color:var(--muted);font-size:11.5px;">' + escapeHtml(row.category) + '</span></td>' +
+        '<td>' + escapeHtml(row.item) + '</td>' +
+        '<td>' + escapeHtml(row.current_lot || '--') + '</td>' +
+        '<td>' + escapeHtml(row.performed_by || '--') + '</td>' +
+        '<td>' + reportCell + '</td>' +
+        '<td>' + (canApprove
+          ? '<input type="text" placeholder="Your name" data-name-input>' +
+            '<br><button data-approve-btn>Approve</button>' +
+            '<div class="row-msg" data-msg></div>'
+          : '<span style="color:var(--muted);">--</span>') +
+        '</td>';
+      if(canApprove){
+        const btn = tr.querySelector('[data-approve-btn]');
+        btn.addEventListener('click', function(){
+          approve(row, tr);
+        });
+      }
+      tbody.appendChild(tr);
+    });
+  }).catch(function(err){
+    document.getElementById('rows').innerHTML = '<tr><td colspan="7">Error loading: ' + escapeHtml(err.message) + '</td></tr>';
+  });
+}
+
+function approve(row, tr){
+  const nameInput = tr.querySelector('[data-name-input]');
+  const msgEl = tr.querySelector('[data-msg]');
+  const verifiedBy = nameInput.value.trim();
+  if(!verifiedBy){
+    msgEl.textContent = 'Enter your name first.';
+    return;
+  }
+  msgEl.textContent = 'Approving...';
+  fetch('/api/approve', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ instrument: row.instrument, category: row.category, item: row.item, verifiedBy: verifiedBy })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){ msgEl.textContent = 'Error: ' + res.error; return; }
+    load();
+  })
+  .catch(function(err){ msgEl.textContent = 'Error: ' + err.message; });
+}
+
+load();
+</script>
+</body>
+</html>
