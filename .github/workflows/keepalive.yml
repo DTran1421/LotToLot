@@ -1,0 +1,20 @@
+name: Supabase Keepalive
+
+# Supabase free-tier projects auto-pause after 7 days with no database
+# activity. This pings a real endpoint (which queries the catalog table)
+# every 3 days to keep it active, well under that threshold.
+
+on:
+  schedule:
+    - cron: '0 12 */3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the app (real Supabase query under the hood)
+        run: |
+          curl -sf https://lot-to-lot.vercel.app/api/instruments > /dev/null \
+            && echo "Keepalive ping succeeded" \
+            || (echo "Keepalive ping FAILED" && exit 1)
