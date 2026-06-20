@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Lot-to-Lot Comparison Report Builder</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
 <style>
   :root{
     --navy:#0f2a47;
@@ -936,8 +936,11 @@ function saveReportToSheet(){
 
   statusEl.textContent = 'Generating PDF...';
 
-  html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 2 } }).from(reportContentEl).outputPdf('blob')
+  html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 2 } }).from(reportContentEl).toPdf().output('blob')
     .then(function(pdfBlob){
+      if(!pdfBlob || pdfBlob.size < 2000){
+        throw new Error('Generated PDF looks empty (' + (pdfBlob ? pdfBlob.size : 0) + ' bytes) -- not uploading. Try again, or use Print / save as PDF instead.');
+      }
       statusEl.textContent = 'Uploading PDF...';
       return fetch(SUPABASE_URL + '/storage/v1/object/reports/' + filename, {
         method: 'POST',
