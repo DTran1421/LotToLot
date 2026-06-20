@@ -450,7 +450,6 @@ function renderAnalyteCard(c){
       is ${calc.pass?'within':'outside'} the allowable difference of ${calc.allowedAtMean.toFixed(2)} ${c.unit||''} (${teaDescription(c)}).
       ${calc.flaggedCount>0?` ${calc.flaggedCount} of ${calc.n} individual sample(s) exceeded TEa &mdash; review flagged rows above.`:''}
     </div>
-    ${markVerifiedHtml(c, calc)}
   ` : '';
 
   return `<div class="card no-print" data-card-id="${c.id}">
@@ -509,28 +508,6 @@ function renderAnalyteCard(c){
 
     ${statsHtml}
   </div>`;
-}
-
-function markVerifiedHtml(c, calc){
-  if(!calc.pass) return '';
-  if(!c.category || !job.instrument){
-    return `<p class="small" style="margin-top:8px;">No "mark verified" button here -- this card wasn't launched from a Lot Tracking shipment link, so there's no instrument/category to write back to.</p>`;
-  }
-  if(!APPS_SCRIPT_URL){
-    return `<p class="small" style="margin-top:8px;">Set <code>APPS_SCRIPT_URL</code> near the top of this file to enable writing this verification back to your Lot Tracking sheet.</p>`;
-  }
-  if(c.verifyStatus==='done'){
-    return `<div class="verdict-banner pass" style="margin-top:8px;">&#10003; Marked verified in the Lot Tracking sheet (${job.instrument} / ${c.category} / ${c.analyteName}).</div>`;
-  }
-  const sending = c.verifyStatus==='sending';
-  const errorHtml = c.verifyStatus==='error' ? `<p class="small" style="color:var(--bad);margin-top:6px;">${c.verifyError}</p>` : '';
-  return `<div class="row-actions" style="margin-top:8px;">
-    <button class="btn" data-action="mark-verified" data-card="${c.id}" ${sending?'disabled':''}>
-      ${sending?'Marking verified...':'Mark verified in Lot Tracking sheet'}
-    </button>
-  </div>
-  <p class="small">Writes back to the Reagent Master row for ${job.instrument} / ${c.category} / ${c.analyteName||'(analyte)'}.</p>
-  ${errorHtml}`;
 }
 
 /* shared datalist for analyte autocomplete */
@@ -831,7 +808,6 @@ function onAction(e){
   else if(action==='calc-card'){ calcCard(cardId); render(); }
   else if(action==='apply-extraction') applyExtraction(cardId);
   else if(action==='build-report') buildReport();
-  else if(action==='mark-verified') markVerified(cardId);
 }
 
 /* ---------------------------- Compiled report ---------------------------- */
@@ -897,8 +873,9 @@ function buildReport(){
     <div class="no-print" style="text-align:center;margin-top:16px;">
       <button class="btn" onclick="window.print()">Print / save as PDF</button>
       <button class="btn secondary" onclick="downloadReport()">Download standalone HTML</button>
-      <button class="btn secondary" onclick="document.getElementById('report').scrollIntoView({behavior:'smooth'})">Jump to report</button>
+      <button class="btn secondary" onclick="saveReportToSheet()">Save report to Lot Tracking sheet</button>
     </div>
+    <p class="small no-print" id="saveReportStatus" style="text-align:center;margin-top:10px;"></p>
   `;
   document.getElementById('report').innerHTML = reportHtml;
   document.getElementById('report').style.display = 'block';
@@ -937,49 +914,53 @@ function applyUrlParams(){
   }
 }
 
-/* ---------------------------- Mark verified (writes back to the Lot Tracking sheet) ---------------------------- */
-function markVerified(cardId){
-  const c = getCard(cardId);
-  if(!c) return;
+/* ---------------------------- Save report (writes back to the Lot Tracking sheet) ---------------------------- */
+function saveReportToSheet(){
+  const statusEl = document.getElementById('saveReportStatus');
   if(!APPS_SCRIPT_URL){
-    c.verifyStatus = 'error';
-    c.verifyError = 'APPS_SCRIPT_URL is not set in this file -- nothing to call.';
-    render();
+    statusEl.textContent = 'Set APPS_SCRIPT_URL near the top of this file to enable saving to the sheet.';
     return;
   }
-  c.verifyStatus = 'sending';
-  c.verifyError = '';
-  render();
 
-  const payload = {
-    action: 'markVerified',
-    instrument: job.instrument,
-    category: c.category,
-    item: c.analyteName,
-    verifiedBy: job.reviewedBy || job.performedBy || ''
-  };
+  const results = analytes
+    .filter(c => c.calc && c.category && job.instrument)
+    .map(c => ({ instrument: job.instrument, category: c.category, item: c.analyteName, pass: c.calc.pass }));
+
+  if(results.length === 0){
+    statusEl.textContent = "None of these analytes were launched from a Lot Tracking link, so there's nothing to write back. You can still print or download the report above.";
+    return;
+  }
+
+  const reportInner = document.getElementById('report').innerHTML.replace(/<div class="no-print"[\s\S]*?<\/div>\s*$/,'');
+  const styles = document.querySelector('style').outerHTML;
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lot-to-Lot Comparison Report</title>${styles}</head><body><div style="max-width:980px;margin:0 auto;padding:24px;">${reportInner}</div></body></html>`;
+  const filename = ('lot_to_lot_' + (job.instrument||'report') + '_' + (job.date||new Date().toISOString().slice(0,10))).replace(/[^a-zA-Z0-9_\-]+/g,'_');
+
+  statusEl.textContent = 'Saving report and generating PDF... this can take a few seconds.';
 
   // Sent as text/plain on purpose -- this keeps it a CORS "simple request" so the
   // browser doesn't send a preflight OPTIONS call, which Apps Script web apps don't handle.
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      action: 'saveReport',
+      performedBy: job.performedBy || '',
+      filename: filename,
+      html: html,
+      results: results
+    })
   })
   .then(r => r.json())
   .then(data => {
     if(data.success){
-      c.verifyStatus = 'done';
+      statusEl.innerHTML = 'Saved. <a href="'+data.result.pdfUrl+'" target="_blank">View the PDF</a> &mdash; status updated for: ' + results.map(r=>r.item).join(', ') + '. Your supervisor approves from the Lot Tracking menu in the sheet.';
     } else {
-      c.verifyStatus = 'error';
-      c.verifyError = data.error || 'Unknown error from the sheet.';
+      statusEl.textContent = 'Error: ' + data.error;
     }
-    render();
   })
   .catch(err => {
-    c.verifyStatus = 'error';
-    c.verifyError = err.message;
-    render();
+    statusEl.textContent = 'Error: ' + err.message;
   });
 }
 
