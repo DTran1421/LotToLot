@@ -76,10 +76,10 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     : '';
 
   const sigGrid = reviewInfo
-    ? '<div class="sig-grid"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + '</div></div>' +
+    ? '<div class="sig-grid"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + ' / ' + (job.date || '--') + '</div></div>' +
       '<div><div class="sig-line">Reviewed by / date</div><div class="small" style="margin-top:2px;">' + (reviewInfo.verifiedBy || '--') + ' / ' + (reviewInfo.dateVerified ? new Date(reviewInfo.dateVerified).toLocaleDateString() : '--') + '</div></div></div>'
-    : '<div class="sig-grid" style="grid-template-columns:1fr;max-width:340px;"><div><div class="sig-line">Tested by / date</div></div></div>' +
-      '<p class="small" style="margin-top:10px;">This is a preview. Reviewer sign-off happens after this report is submitted -- the final, signed PDF is generated at approval time.</p>';
+    : '<div class="sig-grid" style="grid-template-columns:1fr;max-width:340px;"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + ' / ' + (job.date || '--') + '</div></div></div>' +
+      '<p class="small" style="margin-top:10px;">Preview -- reviewer sign-off and the final PDF happen at approval time.</p>';
 
   return '<div class="masthead"><h1>Lot-to-Lot Comparison Report' + (reviewInfo ? ' (Final - Reviewed)' : ' (Preview - Pending Review)') + '</h1>' +
     '<p style="color:#c9d8e6;">' + (job.instrument || 'Instrument not specified') + ' &middot; ' + (job.date || 'date not specified') + '</p></div>' +
@@ -96,7 +96,7 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     (anyMissing ? ' (one or more analyte cards had no data and were excluded from this verdict)' : '') +
     '</div></div>' +
     sections +
-    '<div class="card"><p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), acceptable performance criteria enforced by PT providers beginning January 1, 2025, unless overridden above with a lab-defined limit. Data extracted from uploaded printouts via AI was not independently re-verified by this tool against the source document -- confirm accuracy before filing as a quality record.</p>' +
+    '<div class="card"><p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), effective January 1, 2025, unless overridden above with a lab-defined limit.</p>' +
     sigGrid +
     '</div>';
 }
