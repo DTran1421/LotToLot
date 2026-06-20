@@ -32,6 +32,10 @@
   .pill.verified{background:var(--good-bg);color:var(--good);}
   .empty{text-align:center;color:var(--muted);padding:30px 0;}
   a.pdf-link{color:var(--navy);}
+  .approve-cell input{width:110px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12px;}
+  .approve-cell button{padding:5px 10px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:4px;}
+  .approve-cell button:disabled{opacity:.5;}
+  .approve-msg{font-size:11px;color:var(--muted);margin-top:3px;}
 </style>
 </head>
 <body>
@@ -39,7 +43,7 @@
   <div class="masthead">
     <div>
       <h1>Lot Tracking &mdash; Browse</h1>
-      <p>Read-only view of the Catalog, Reagent Master, and Receiving Log tables.</p>
+      <p>Read-only view of the Catalog, Reagent Master, and Receiving Log tables. Approve pending verifications inline on the Reagent Master tab.</p>
     </div>
     <a href="/">&larr; Back to shipment form</a>
   </div>
@@ -109,10 +113,15 @@ function niceLabel(col){
   return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
+function canApprove(row){
+  return row.status === 'Pending Review' || row.status === 'Failed - needs investigation';
+}
+
 function render(){
   const cols = COLUMN_LABELS[currentTable];
+  const showApprove = currentTable === 'reagent_master';
   const head = document.getElementById('tableHead');
-  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + '</tr>';
+  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
 
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const filtered = currentRows.filter(function(row){
@@ -124,12 +133,57 @@ function render(){
   });
 
   const body = document.getElementById('tableBody');
-  body.innerHTML = filtered.map(function(row){
-    return '<tr>' + cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('') + '</tr>';
-  }).join('');
+  body.innerHTML = '';
+  filtered.forEach(function(row){
+    const tr = document.createElement('tr');
+    let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
+    if(showApprove){
+      html += canApprove(row)
+        ? '<td class="approve-cell"><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
+        : '<td><span style="color:#bbb;">--</span></td>';
+    }
+    tr.innerHTML = html;
+    if(showApprove && canApprove(row)){
+      tr.querySelector('[data-approve-btn]').addEventListener('click', function(){
+        approve(row, tr);
+      });
+    }
+    body.appendChild(tr);
+  });
 
   document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
+}
+
+function approve(row, tr){
+  const nameInput = tr.querySelector('[data-name-input]');
+  const msgEl = tr.querySelector('[data-msg]');
+  const btn = tr.querySelector('[data-approve-btn]');
+  const verifiedBy = nameInput.value.trim();
+  if(!verifiedBy){
+    msgEl.textContent = 'Enter your name first.';
+    return;
+  }
+  btn.disabled = true;
+  msgEl.textContent = 'Approving...';
+  fetch('/api/approve', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ instrument: row.instrument, category: row.category, item: row.item, verifiedBy: verifiedBy })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){
+      msgEl.textContent = 'Error: ' + res.error;
+      btn.disabled = false;
+      return;
+    }
+    load(currentTable);
+  })
+  .catch(function(err){
+    msgEl.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
+  });
 }
 
 function load(table){
