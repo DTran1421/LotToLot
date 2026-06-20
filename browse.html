@@ -195,7 +195,7 @@ function render(){
     let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
     if(showApprove){
       html += canApprove(row)
-        ? '<td class="approve-cell"><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
+        ? '<td class="approve-cell"><button data-preview-btn>Preview</button><br><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
         : '<td><span style="color:#bbb;">--</span></td>';
     }
     tr.innerHTML = html;
@@ -203,12 +203,63 @@ function render(){
       tr.querySelector('[data-approve-btn]').addEventListener('click', function(){
         approve(row, tr);
       });
+      tr.querySelector('[data-preview-btn]').addEventListener('click', function(){
+        preview(row, tr);
+      });
     }
     body.appendChild(tr);
   });
 
   document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
+}
+
+/**
+ * Regenerates the report from stored data and opens it as a PDF in a new
+ * tab for review -- WITHOUT uploading anywhere or marking anything reviewed.
+ * This is what lets you actually see the report before deciding to approve.
+ */
+function preview(row, tr){
+  const msgEl = tr.querySelector('[data-msg]');
+  const btn = tr.querySelector('[data-preview-btn]');
+  btn.disabled = true;
+  msgEl.textContent = 'Loading...';
+
+  const getHistoryRow = (currentTable === 'lot_to_lot_reports')
+    ? Promise.resolve(row)
+    : fetch('/api/latest-pending?instrument=' + encodeURIComponent(row.instrument) + '&category=' + encodeURIComponent(row.category) + '&item=' + encodeURIComponent(row.item))
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if(d.error) throw new Error(d.error); return d; });
+
+  getHistoryRow.then(function(historyRow){
+    if(!historyRow.report_data){
+      throw new Error('No stored data to preview.');
+    }
+    const job = historyRow.report_data.job;
+    const card = historyRow.report_data.card;
+
+    const target = document.getElementById('pdf-render-target');
+    target.innerHTML = buildReportContentHtml(job, [card], null);
+
+    msgEl.textContent = 'Generating preview...';
+    window.scrollTo(0, 0);
+    return html2pdf().set({ margin: 10, html2canvas: { scale: 2, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob');
+  })
+  .then(function(pdfBlob){
+    if(!pdfBlob || pdfBlob.size < 2000){
+      throw new Error('Preview looks empty (' + (pdfBlob?pdfBlob.size:0) + ' bytes).');
+    }
+    window.open(URL.createObjectURL(pdfBlob), '_blank');
+    msgEl.textContent = '';
+    btn.disabled = false;
+  })
+  .catch(function(err){
+    msgEl.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
+  })
+  .finally(function(){
+    document.getElementById('pdf-render-target').innerHTML = '';
+  });
 }
 
 /**

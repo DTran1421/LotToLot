@@ -878,6 +878,11 @@ function applyUrlParams(){
 function saveReportToSheet(){
   const statusEl = document.getElementById('saveReportStatus');
 
+  if(!job.performedBy || !job.performedBy.trim()){
+    statusEl.textContent = 'Fill in "Tested by" in Job Information above before submitting -- it gets baked into the permanent record.';
+    return;
+  }
+
   const qualifying = analytes.filter(c => c.calc && c.category && job.instrument);
   if(qualifying.length === 0){
     statusEl.textContent = "None of these analytes have a Category set, so there's nothing to write back. Set Category on each card above, or arrive here via a Start verification link.";

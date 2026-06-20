@@ -17,6 +17,9 @@ module.exports = async (req, res) => {
     if (!job || !cards || cards.length === 0) {
       return res.status(400).json({ error: 'job and cards are required' });
     }
+    if (!job.performedBy || !job.performedBy.trim()) {
+      return res.status(400).json({ error: '"Tested by" is required on the job info before submitting.' });
+    }
 
     const qualifying = cards.filter((c) => c.calc && c.category && job.instrument);
     if (qualifying.length === 0) {
