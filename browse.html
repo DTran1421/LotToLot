@@ -245,7 +245,7 @@ function preview(row, tr){
 
     msgEl.textContent = 'Generating preview...';
     window.scrollTo(0, 0);
-    return html2pdf().set({ margin: 10, html2canvas: { scale: 2, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob');
+    return html2pdf().set({ margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob');
   })
   .then(function(pdfBlob){
     if(!pdfBlob || pdfBlob.size < 2000){
@@ -306,7 +306,7 @@ function approve(row, tr){
     const filename = ('lot_to_lot_FINAL_' + (historyRow.instrument||'report') + '_' + (historyRow.item||'') + '_' + Date.now()).replace(/[^a-zA-Z0-9_\-]+/g,'_') + '.pdf';
 
     window.scrollTo(0, 0);
-    return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 2, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob')
+    return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0 } }).from(target).toPdf().output('blob')
       .then(function(pdfBlob){
         if(!pdfBlob || pdfBlob.size < 2000){
           throw new Error('Generated PDF looks empty (' + (pdfBlob?pdfBlob.size:0) + ' bytes). Try again.');
