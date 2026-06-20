@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lot-to-Lot Comparison Report Builder</title>
+<style>
+  :root{
+    --navy:#0f2a47;
+    --navy-light:#1c3f63;
+    --steel:#5b7891;
+    --bg:#f4f6f8;
+    --card:#ffffff;
+    --line:#dbe2e8;
+    --ink:#172a3a;
+    --muted:#5f7385;
+    --good:#1b7a4d;
+    --good-bg:#e7f5ee;
+    --bad:#b3261e;
+    --bad-bg:#fcebea;
+    --accent:#2f6fa3;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:Inter,Arial,Helvetica,sans-serif;
+    font-size:14px;
+    line-height:1.45;
+  }
+  #app{max-width:980px;margin:0 auto;padding:24px 20px 80px;}
+  .masthead{
+    background:var(--navy);
+    color:#fff;
+    border-radius:10px;
+    padding:20px 24px;
+    margin-bottom:18px;
+  }
+  .masthead h1{margin:0 0 4px;font-size:20px;font-weight:700;letter-spacing:.2px;}
+  .masthead p{margin:0;color:#c9d8e6;font-size:13px;}
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 20px;
+    margin-bottom:16px;
+  }
+  .card h2{
+    margin:0 0 12px;
+    font-size:15px;
+    color:var(--navy);
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .card h2 .tag{
+    font-size:10.5px;
+    font-weight:600;
+    color:var(--steel);
+    background:#eef2f6;
+    padding:3px 8px;
+    border-radius:20px;
+    letter-spacing:.3px;
+    text-transform:uppercase;
+  }
+  .grid{display:grid;gap:12px;}
+  .grid.cols-2{grid-template-columns:1fr 1fr;}
+  .grid.cols-3{grid-template-columns:1fr 1fr 1fr;}
+  .grid.cols-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+  label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px;}
+  input[type=text],input[type=number],input[type=date],select,textarea{
+    width:100%;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:13.5px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#fff;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  textarea{resize:vertical;min-height:90px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
+  .field{margin-bottom:2px;}
+  .btn{
+    border:1px solid var(--navy);
+    background:var(--navy);
+    color:#fff;
+    padding:8px 14px;
+    border-radius:6px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn:hover{background:var(--navy-light);}
+  .btn.secondary{background:#fff;color:var(--navy);}
+  .btn.secondary:hover{background:#eef2f6;}
+  .btn.danger{background:#fff;color:var(--bad);border-color:#e3b3af;}
+  .btn.danger:hover{background:var(--bad-bg);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;}
+  .tab{
+    padding:8px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+  }
+  .tab.active{color:var(--navy);border-bottom-color:var(--navy);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;}
+  th{background:#f6f8fa;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;}
+  td input{border:none;padding:3px 4px;font-size:13px;width:100%;background:transparent;}
+  td input:focus{outline:1px solid var(--accent);background:#fff;}
+  tr.flag td{background:var(--bad-bg);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .pill.pass{background:var(--good-bg);color:var(--good);}
+  .pill.fail{background:var(--bad-bg);color:var(--bad);}
+  .hint{font-size:12px;color:var(--muted);margin:6px 0 10px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;}
+  .stat{background:#f6f8fa;border-radius:8px;padding:10px 12px;}
+  .stat .v{font-size:17px;font-weight:700;color:var(--navy);}
+  .stat .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
+  .verdict-banner{
+    margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:700;
+  }
+  .verdict-banner.pass{background:var(--good-bg);color:var(--good);}
+  .verdict-banner.fail{background:var(--bad-bg);color:var(--bad);}
+  .small{font-size:12px;color:var(--muted);}
+  .upload-zone{
+    border:2px dashed var(--line);
+    border-radius:8px;
+    padding:18px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+    cursor:pointer;
+  }
+  .upload-zone.drag{border-color:var(--accent);background:#eef5fb;}
+  .extract-status{font-size:12.5px;margin-top:8px;color:var(--muted);}
+  .footer-link{text-align:center;color:var(--muted);font-size:11.5px;margin-top:30px;}
+  .checkbox-row{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);margin-top:6px;}
+  .checkbox-row input{width:auto;}
+  #report{display:none;}
+  @media print{
+    body{background:#fff;}
+    .no-print{display:none !important;}
+    #builder{display:none !important;}
+    #report{display:block !important;}
+    .card{break-inside:avoid;border:1px solid #999;}
+  }
+  .report-page .masthead{background:var(--navy);}
+  .report-section{margin-bottom:22px;}
+  .report-section h3{color:var(--navy);font-size:14.5px;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:10px;}
+  .meta-table{width:100%;border-collapse:collapse;margin-bottom:10px;}
+  .meta-table td{border:none;padding:3px 0;font-size:13px;}
+  .meta-table td.k{color:var(--muted);width:160px;font-weight:600;}
+  .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px;}
+  .sig-line{border-top:1px solid #333;margin-top:34px;padding-top:4px;font-size:11.5px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ---------------------------------------------------------------------
+   CLIA acceptable performance criteria (CMS-3355-F final rule,
+   effective 7/11/2024, enforced by PT providers 1/1/2025).
+   Source: 42 CFR 493.801-493.959 / CMS fact sheet / cross-checked
+   against published summaries. Editable per-card in the UI --
+   verify against current regs before using for a regulatory record.
+   mode: 'pct' (percent only), 'fixed' (fixed only), 'greater'
+   (the larger of the fixed amount or the percent of target wins).
+--------------------------------------------------------------------- */
+const CLIA_TEA = {
+  "alanine aminotransferase":{label:"ALT",unit:"U/L",mode:"greater",pct:15,fixed:6,fixedUnit:"U/L"},
+  "albumin":{label:"Albumin",unit:"g/dL",mode:"pct",pct:8},
+  "alkaline phosphatase":{label:"ALP",unit:"U/L",mode:"pct",pct:20},
+  "amylase":{label:"Amylase",unit:"U/L",mode:"pct",pct:20},
+  "aspartate aminotransferase":{label:"AST",unit:"U/L",mode:"greater",pct:15,fixed:6,fixedUnit:"U/L"},
+  "bilirubin total":{label:"Total Bilirubin",unit:"mg/dL",mode:"greater",pct:20,fixed:0.4,fixedUnit:"mg/dL"},
+  "bnp":{label:"BNP",unit:"pg/mL",mode:"pct",pct:30},
+  "pro-bnp":{label:"Pro-BNP",unit:"pg/mL",mode:"pct",pct:30},
+  "calcium total":{label:"Calcium, total",unit:"mg/dL",mode:"fixed",fixed:1.0,fixedUnit:"mg/dL"},
+  "carbon dioxide":{label:"CO2",unit:"mmol/L",mode:"pct",pct:20},
+  "chloride":{label:"Chloride",unit:"mmol/L",mode:"pct",pct:5},
+  "cholesterol total":{label:"Cholesterol, total",unit:"mg/dL",mode:"pct",pct:10},
+  "cholesterol hdl":{label:"HDL Cholesterol",unit:"mg/dL",mode:"greater",pct:20,fixed:6,fixedUnit:"mg/dL"},
+  "cholesterol ldl direct":{label:"LDL Cholesterol (direct)",unit:"mg/dL",mode:"pct",pct:20},
+  "creatine kinase":{label:"CK",unit:"U/L",mode:"pct",pct:20},
+  "creatinine":{label:"Creatinine",unit:"mg/dL",mode:"greater",pct:10,fixed:0.2,fixedUnit:"mg/dL"},
+  "ferritin":{label:"Ferritin",unit:"ng/mL",mode:"pct",pct:20},
+  "gamma glutamyl transferase":{label:"GGT",unit:"U/L",mode:"greater",pct:15,fixed:5,fixedUnit:"U/L"},
+  "glucose":{label:"Glucose",unit:"mg/dL",mode:"greater",pct:8,fixed:6,fixedUnit:"mg/dL"},
+  "hemoglobin a1c":{label:"Hemoglobin A1c",unit:"%",mode:"pct",pct:8},
+  "iron total":{label:"Iron, total",unit:"mcg/dL",mode:"pct",pct:15},
+  "lactate dehydrogenase":{label:"LDH",unit:"U/L",mode:"pct",pct:15},
+  "magnesium":{label:"Magnesium",unit:"mg/dL",mode:"pct",pct:15},
+  "phosphorus":{label:"Phosphorus",unit:"mg/dL",mode:"greater",pct:10,fixed:0.3,fixedUnit:"mg/dL"},
+  "potassium":{label:"Potassium",unit:"mmol/L",mode:"fixed",fixed:0.3,fixedUnit:"mmol/L"},
+  "prostate specific antigen":{label:"PSA, total",unit:"ng/mL",mode:"greater",pct:20,fixed:0.2,fixedUnit:"ng/mL"},
+  "sodium":{label:"Sodium",unit:"mmol/L",mode:"fixed",fixed:4,fixedUnit:"mmol/L"},
+  "total iron binding capacity":{label:"TIBC (direct)",unit:"mcg/dL",mode:"pct",pct:20},
+  "total protein":{label:"Total Protein",unit:"g/dL",mode:"pct",pct:8},
+  "triglycerides":{label:"Triglycerides",unit:"mg/dL",mode:"pct",pct:15},
+  "troponin i":{label:"Troponin I",unit:"ng/mL",mode:"greater",pct:30,fixed:0.9,fixedUnit:"ng/mL"},
+  "troponin t":{label:"Troponin T",unit:"ng/mL",mode:"greater",pct:30,fixed:0.2,fixedUnit:"ng/mL"},
+  "urea nitrogen":{label:"BUN",unit:"mg/dL",mode:"greater",pct:9,fixed:2,fixedUnit:"mg/dL"},
+  "uric acid":{label:"Uric Acid",unit:"mg/dL",mode:"pct",pct:10},
+  "cortisol":{label:"Cortisol",unit:"mcg/dL",mode:"pct",pct:20},
+  "estradiol":{label:"Estradiol",unit:"pg/mL",mode:"pct",pct:30},
+  "folate serum":{label:"Folate, serum",unit:"ng/mL",mode:"greater",pct:30,fixed:1,fixedUnit:"ng/mL"},
+  "follicle stimulating hormone":{label:"FSH",unit:"IU/L",mode:"greater",pct:18,fixed:2,fixedUnit:"IU/L"},
+  "free thyroxine":{label:"Free T4",unit:"ng/dL",mode:"greater",pct:15,fixed:0.3,fixedUnit:"ng/dL"},
+  "human chorionic gonadotropin":{label:"hCG",unit:"mIU/mL",mode:"greater",pct:18,fixed:3,fixedUnit:"mIU/mL"},
+  "luteinizing hormone":{label:"LH",unit:"IU/L",mode:"pct",pct:20},
+  "parathyroid hormone":{label:"PTH",unit:"pg/mL",mode:"pct",pct:30},
+  "progesterone":{label:"Progesterone",unit:"ng/mL",mode:"pct",pct:25},
+  "prolactin":{label:"Prolactin",unit:"ng/mL",mode:"pct",pct:20},
+  "testosterone":{label:"Testosterone",unit:"ng/dL",mode:"greater",pct:30,fixed:20,fixedUnit:"ng/dL"},
+  "t3 uptake":{label:"T3 Uptake",unit:"%",mode:"pct",pct:18},
+  "triiodothyronine":{label:"Total T3",unit:"ng/dL",mode:"pct",pct:30},
+  "thyroid stimulating hormone":{label:"TSH",unit:"mIU/L",mode:"greater",pct:20,fixed:0.2,fixedUnit:"mIU/L"},
+  "thyroxine":{label:"Total T4",unit:"mcg/dL",mode:"greater",pct:20,fixed:1.0,fixedUnit:"mcg/dL"},
+  "vitamin b12":{label:"Vitamin B12",unit:"pg/mL",mode:"greater",pct:25,fixed:30,fixedUnit:"pg/mL"},
+  "c-reactive protein hs":{label:"CRP (high sensitivity)",unit:"mg/L",mode:"greater",pct:30,fixed:1,fixedUnit:"mg/L"},
+  "iga":{label:"IgA",unit:"mg/dL",mode:"pct",pct:20},
+  "igg":{label:"IgG",unit:"mg/dL",mode:"pct",pct:20},
+  "igm":{label:"IgM",unit:"mg/dL",mode:"pct",pct:20},
+  "ige":{label:"IgE",unit:"IU/mL",mode:"pct",pct:20},
+  "erythrocyte count":{label:"RBC",unit:"x10^6/uL",mode:"pct",pct:4},
+  "hematocrit":{label:"Hematocrit",unit:"%",mode:"pct",pct:4},
+  "hemoglobin":{label:"Hemoglobin",unit:"g/dL",mode:"pct",pct:4},
+  "leukocyte count":{label:"WBC",unit:"x10^3/uL",mode:"pct",pct:10},
+  "platelet count":{label:"Platelets",unit:"x10^3/uL",mode:"pct",pct:25},
+  "fibrinogen":{label:"Fibrinogen",unit:"mg/dL",mode:"pct",pct:20},
+  "prothrombin time":{label:"PT",unit:"sec",mode:"pct",pct:15},
+  "partial thromboplastin time":{label:"PTT",unit:"sec",mode:"pct",pct:15}
+};
+const CLIA_ALIASES = {
+  "sgpt":"alanine aminotransferase","alt":"alanine aminotransferase",
+  "sgot":"aspartate aminotransferase","ast":"aspartate aminotransferase",
+  "alp":"alkaline phosphatase","amy":"amylase",
+  "tbili":"bilirubin total","bilirubin":"bilirubin total","t bili":"bilirubin total",
+  "ca":"calcium total","calcium":"calcium total",
+  "co2":"carbon dioxide","tco2":"carbon dioxide",
+  "cl":"chloride","chol":"cholesterol total","cholesterol":"cholesterol total",
+  "hdl":"cholesterol hdl","hdl-c":"cholesterol hdl","hdl cholesterol":"cholesterol hdl",
+  "ldl":"cholesterol ldl direct","ldl-c":"cholesterol ldl direct","ldl cholesterol":"cholesterol ldl direct",
+  "ck":"creatine kinase","creat kinase":"creatine kinase",
+  "creat":"creatinine","crea":"creatinine",
+  "ferr":"ferritin","ggt":"gamma glutamyl transferase",
+  "glu":"glucose","a1c":"hemoglobin a1c","hba1c":"hemoglobin a1c",
+  "fe":"iron total","iron":"iron total",
+  "ldh":"lactate dehydrogenase","mg":"magnesium","phos":"phosphorus",
+  "k":"potassium","psa":"prostate specific antigen",
+  "na":"sodium","tibc":"total iron binding capacity",
+  "tp":"total protein","trig":"triglycerides","tg":"triglycerides",
+  "trop i":"troponin i","trop t":"troponin t",
+  "bun":"urea nitrogen","urea":"urea nitrogen","ua":"uric acid",
+  "free t4":"free thyroxine","ft4":"free thyroxine",
+  "hcg":"human chorionic gonadotropin","lh":"luteinizing hormone",
+  "pth":"parathyroid hormone","prog":"progesterone","prl":"prolactin",
+  "testo":"testosterone","total t3":"triiodothyronine","t3":"triiodothyronine",
+  "tsh":"thyroid stimulating hormone","total t4":"thyroxine","t4":"thyroxine",
+  "b12":"vitamin b12","crp":"c-reactive protein hs","hs-crp":"c-reactive protein hs",
+  "rbc":"erythrocyte count","hct":"hematocrit","hgb":"hemoglobin","hb":"hemoglobin",
+  "wbc":"leukocyte count","plt":"platelet count","fib":"fibrinogen",
+  "pt":"prothrombin time","ptt":"partial thromboplastin time","aptt":"partial thromboplastin time"
+};
+function lookupTea(name){
+  if(!name) return null;
+  let key = name.trim().toLowerCase();
+  if(CLIA_TEA[key]) return CLIA_TEA[key];
+  if(CLIA_ALIASES[key]) return CLIA_TEA[CLIA_ALIASES[key]];
+  // loose contains match
+  for(const k in CLIA_TEA){ if(k.includes(key)||key.includes(k)) return CLIA_TEA[k]; }
+  return null;
+}
+
+/* ---------------------------- App state ---------------------------- */
+// Paste the /exec URL of your deployed Lot Tracking Apps Script web app here
+// to enable "Mark verified" buttons that write back to the Reagent Master sheet.
+// Leave blank to disable that feature entirely (everything else still works).
+const APPS_SCRIPT_URL = "";
+
+let job = {instrument:"",performedBy:"",reviewedBy:"",date:"",reason:"New lot received (routine)",comments:""};
+let cardIdSeed = 1;
+let analytes = [];
+
+function newCard(){
+  return {
+    id: cardIdSeed++,
+    analyteName:"",
+    unit:"",
+    oldLot:"",
+    newLot:"",
+    category:"", // set only when this card was launched from the Lot Tracking sheet's link
+    verifyStatus:"idle", // idle | sending | done | error
+    verifyError:"",
+    teaMode:"pct", teaPct:null, teaFixed:null, teaFixedUnit:"",
+    teaSource:"-- not matched, enter manually --",
+    teaOverridden:false,
+    activeTab:"paste",
+    rows:[], // {id, sampleId, oldVal, newVal}
+    rowIdSeed:1,
+    extraction:null, // {records:[{analyte,sampleId,label,value}], analytes:[...], labels:[...]}
+    extractAnalyteFilter:"",
+    extractOldLabel:"",
+    extractNewLabel:"",
+    extractStatus:"",
+    calc:null
+  };
+}
+
+function getCard(id){ return analytes.find(c=>c.id===id); }
+
+function addAnalyteCard(){
+  analytes.push(newCard());
+  render();
+}
+function removeAnalyteCard(id){
+  analytes = analytes.filter(c=>c.id!==id);
+  render();
+}
+
+/* ---------------------------- Rendering ---------------------------- */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div id="builder">
+      ${renderMasthead()}
+      ${renderJobCard()}
+      ${analytes.map(renderAnalyteCard).join('')}
+      <div class="no-print" style="text-align:center;margin:18px 0;">
+        <button class="btn secondary" data-action="add-card">+ Add another analyte</button>
+      </div>
+      <div class="card no-print" style="text-align:center;">
+        <button class="btn" data-action="build-report" style="font-size:14px;padding:10px 22px;">Generate compiled report</button>
+        <p class="hint" style="margin-top:8px;">Calculates every analyte card above and builds the printable report below.</p>
+      </div>
+      <p class="footer-link no-print">Lot-to-lot comparison tool &middot; CLIA TEa criteria built in &middot; verify acceptance criteria against current regulations before filing</p>
+    </div>
+    <div id="report" class="report-page"></div>
+  `;
+  attachHandlers();
+}
+
+function renderMasthead(){
+  return `<div class="masthead no-print">
+    <h1>Lot-to-Lot Comparison Report Builder</h1>
+    <p>Upload an instrument printout or paste paired results &middot; auto-extracts data &middot; checks against CLIA acceptable performance criteria</p>
+  </div>`;
+}
+
+function renderJobCard(){
+  return `<div class="card no-print">
+    <h2>Job information</h2>
+    <div class="grid cols-3">
+      <div class="field"><label>Instrument</label>
+        <select data-job="instrument">
+          ${["","01. DXC","02. DXI","03. DXH","03. SMS","04. DXU","05. Tosoh","06. Clinitek","07. Hemosure","08. Sedimat","09. Waived","11. DXA","Other / waived platform"].map(o=>`<option ${job.instrument===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Date performed</label><input type="date" data-job="date" value="${job.date}"></div>
+      <div class="field"><label>Reason for lot change</label>
+        <select data-job="reason">
+          ${["New lot received (routine)","Previous lot exhausted","Lot failed QC / recall","New reagent shipment received","Calibrator lot change","Scheduled periodic comparability verification","New instrument / platform implementation","Other (see comments)"].map(o=>`<option ${job.reason===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Tested by</label><input type="text" data-job="performedBy" value="${job.performedBy}"></div>
+      <div class="field"><label>Reviewed by</label><input type="text" data-job="reviewedBy" value="${job.reviewedBy}"></div>
+      <div class="field"><label>Comments</label><input type="text" data-job="comments" value="${job.comments}"></div>
+    </div>
+  </div>`;
+}
+
+function teaDescription(c){
+  if(c.teaMode==='fixed') return `± ${c.teaFixed} ${c.teaFixedUnit}`;
+  if(c.teaMode==='pct') return `± ${c.teaPct}%`;
+  if(c.teaMode==='greater') return `± ${c.teaFixed} ${c.teaFixedUnit} or ± ${c.teaPct}% (whichever greater)`;
+  return '--';
+}
+
+function renderAnalyteCard(c){
+  const rowsHtml = c.rows.map(r=>{
+    const oldV = parseFloat(r.oldVal), newV = parseFloat(r.newVal);
+    let diffCell='', pctCell='', flag=false;
+    if(!isNaN(oldV) && !isNaN(newV) && oldV!==0){
+      const diff = newV-oldV, pct = (diff/oldV)*100;
+      diffCell = diff.toFixed(2);
+      pctCell = pct.toFixed(1)+'%';
+      const allowed = allowableDiff(c, oldV);
+      if(allowed!==null && Math.abs(diff) > allowed) flag = true;
+    }
+    return `<tr class="${flag?'flag':''}">
+      <td><input type="text" value="${r.sampleId}" data-row-field="sampleId" data-card="${c.id}" data-row="${r.id}"></td>
+      <td><input type="number" step="any" value="${r.oldVal}" data-row-field="oldVal" data-card="${c.id}" data-row="${r.id}"></td>
+      <td><input type="number" step="any" value="${r.newVal}" data-row-field="newVal" data-card="${c.id}" data-row="${r.id}"></td>
+      <td>${diffCell}</td>
+      <td>${pctCell}</td>
+      <td class="no-print"><button class="btn danger" style="padding:2px 8px;font-size:11px;" data-action="remove-row" data-card="${c.id}" data-row="${r.id}">remove</button></td>
+    </tr>`;
+  }).join('');
+
+  const extractionPanel = c.extraction ? `
+    <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px;">
+      <div class="grid cols-3">
+        <div class="field"><label>Analyte found in printout</label>
+          <select data-action-select="extract-analyte" data-card="${c.id}">
+            <option value="">-- choose --</option>
+            ${c.extraction.analytes.map(a=>`<option value="${a}" ${c.extractAnalyteFilter===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Column / lot label = OLD lot</label>
+          <select data-action-select="extract-old" data-card="${c.id}">
+            <option value="">-- choose --</option>
+            ${c.extraction.labels.map(l=>`<option value="${l}" ${c.extractOldLabel===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Column / lot label = NEW lot</label>
+          <select data-action-select="extract-new" data-card="${c.id}">
+            <option value="">-- choose --</option>
+            ${c.extraction.labels.map(l=>`<option value="${l}" ${c.extractNewLabel===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn secondary" data-action="apply-extraction" data-card="${c.id}">Pair &amp; populate table below</button>
+      </div>
+      <p class="small">Raw extraction found ${c.extraction.records.length} data point(s) across ${c.extraction.analytes.length} analyte(s) and ${c.extraction.labels.length} distinct column/lot label(s). Review the populated table carefully against the original printout &mdash; AI extraction can misread crowded or low-quality printouts.</p>
+    </div>` : '';
+
+  const calc = c.calc;
+  const statsHtml = calc ? `
+    <div class="stat-grid">
+      <div class="stat"><div class="v">${calc.n}</div><div class="l">Paired samples</div></div>
+      <div class="stat"><div class="v">${calc.meanOld.toFixed(2)}</div><div class="l">Mean old lot</div></div>
+      <div class="stat"><div class="v">${calc.meanNew.toFixed(2)}</div><div class="l">Mean new lot</div></div>
+      <div class="stat"><div class="v">${calc.meanBiasPct>=0?'+':''}${calc.meanBiasPct.toFixed(1)}%</div><div class="l">Mean bias</div></div>
+      <div class="stat"><div class="v">${calc.sdDiff.toFixed(2)}</div><div class="l">SD of differences</div></div>
+      <div class="stat"><div class="v">${calc.maxAbsPct.toFixed(1)}%</div><div class="l">Max |% diff|, single sample</div></div>
+      <div class="stat"><div class="v">${calc.flaggedCount}</div><div class="l">Samples exceeding TEa</div></div>
+      <div class="stat"><div class="v">${teaDescription(c)}</div><div class="l">CLIA TEa applied</div></div>
+    </div>
+    <div class="verdict-banner ${calc.pass?'pass':'fail'}">
+      ${calc.pass ? 'PASS' : 'FAIL'} &mdash; mean bias of ${calc.meanBiasPct.toFixed(1)}% at a mean concentration of ${calc.meanOld.toFixed(2)} ${c.unit||''}
+      is ${calc.pass?'within':'outside'} the allowable difference of ${calc.allowedAtMean.toFixed(2)} ${c.unit||''} (${teaDescription(c)}).
+      ${calc.flaggedCount>0?` ${calc.flaggedCount} of ${calc.n} individual sample(s) exceeded TEa &mdash; review flagged rows above.`:''}
+    </div>
+    ${markVerifiedHtml(c, calc)}
+  ` : '';
+
+  return `<div class="card no-print" data-card-id="${c.id}">
+    <h2>Analyte comparison <span class="tag">card #${c.id}</span></h2>
+    <div class="grid cols-4">
+      <div class="field"><label>Analyte</label>
+        <input type="text" list="analyte-list" value="${c.analyteName}" data-field="analyteName" data-card="${c.id}" placeholder="e.g. Creatinine">
+      </div>
+      <div class="field"><label>Unit</label><input type="text" value="${c.unit}" data-field="unit" data-card="${c.id}"></div>
+      <div class="field"><label>Old lot #</label><input type="text" value="${c.oldLot}" data-field="oldLot" data-card="${c.id}"></div>
+      <div class="field"><label>New lot #</label><input type="text" value="${c.newLot}" data-field="newLot" data-card="${c.id}"></div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:10px;">
+      <div class="field"><label>TEa source</label><input type="text" value="${c.teaSource}" disabled style="background:#f6f8fa;color:var(--muted);"></div>
+      <div class="field"><label>TEa %</label><input type="number" step="any" value="${c.teaPct===null?'':c.teaPct}" data-field="teaPct" data-card="${c.id}"></div>
+      <div class="field"><label>TEa fixed amount (units of analyte)</label><input type="number" step="any" value="${c.teaFixed===null?'':c.teaFixed}" data-field="teaFixed" data-card="${c.id}"></div>
+    </div>
+    <p class="hint">Acceptance rule applied: ${teaDescription(c)}. Edit TEa% / fixed amount above to override the CLIA default for this analyte (e.g. to use a lab-defined TEa). Mode:
+      <select data-field="teaMode" data-card="${c.id}" style="display:inline-block;width:auto;padding:2px 6px;">
+        <option value="pct" ${c.teaMode==='pct'?'selected':''}>% only</option>
+        <option value="fixed" ${c.teaMode==='fixed'?'selected':''}>fixed only</option>
+        <option value="greater" ${c.teaMode==='greater'?'selected':''}>fixed or % (greater)</option>
+      </select>
+    </p>
+
+    <div class="tabs">
+      <div class="tab ${c.activeTab==='paste'?'active':''}" data-action="set-tab" data-tab="paste" data-card="${c.id}">Manual entry</div>
+      <div class="tab ${c.activeTab==='upload'?'active':''}" data-action="set-tab" data-tab="upload" data-card="${c.id}">Upload printout (AI extract)</div>
+    </div>
+
+    ${c.activeTab==='paste' ? `
+      <p class="hint">Click into a cell below and type, or copy a block of cells from Excel / your instrument software and paste directly into the first cell &mdash; it will fill across the grid automatically.</p>
+      <div class="row-actions" style="margin-top:0;margin-bottom:10px;">
+        <button class="btn secondary" data-action="add-row" data-card="${c.id}">+ Add row</button>
+        <button class="btn secondary" data-action="add-rows-5" data-card="${c.id}">+ Add 5 rows</button>
+      </div>
+    ` : `
+      <div class="upload-zone" data-action="trigger-file" data-card="${c.id}">
+        Click to choose, or drag in, a printout image or PDF (1&ndash;2 pages)
+        <input type="file" accept="image/*,.pdf" data-file-input="${c.id}" style="display:none;">
+      </div>
+      <p class="extract-status">${c.extractStatus}</p>
+      ${extractionPanel}
+    `}
+
+    <table style="margin-top:14px;">
+      <thead><tr><th>Sample ID</th><th>Old lot result</th><th>New lot result</th><th>Diff</th><th>% diff</th><th class="no-print"></th></tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="6" class="small" style="text-align:center;color:var(--muted);">No rows yet &mdash; parse pasted data, extract from a printout, or add a row manually.</td></tr>`}</tbody>
+    </table>
+    <div class="row-actions">
+      <button class="btn secondary" data-action="add-row" data-card="${c.id}">+ Add row manually</button>
+      <button class="btn" data-action="calc-card" data-card="${c.id}">Calculate</button>
+      <button class="btn danger" data-action="remove-card" data-card="${c.id}" style="margin-left:auto;">Remove this analyte</button>
+    </div>
+
+    ${statsHtml}
+  </div>`;
+}
+
+function markVerifiedHtml(c, calc){
+  if(!calc.pass) return '';
+  if(!c.category || !job.instrument){
+    return `<p class="small" style="margin-top:8px;">No "mark verified" button here -- this card wasn't launched from a Lot Tracking shipment link, so there's no instrument/category to write back to.</p>`;
+  }
+  if(!APPS_SCRIPT_URL){
+    return `<p class="small" style="margin-top:8px;">Set <code>APPS_SCRIPT_URL</code> near the top of this file to enable writing this verification back to your Lot Tracking sheet.</p>`;
+  }
+  if(c.verifyStatus==='done'){
+    return `<div class="verdict-banner pass" style="margin-top:8px;">&#10003; Marked verified in the Lot Tracking sheet (${job.instrument} / ${c.category} / ${c.analyteName}).</div>`;
+  }
+  const sending = c.verifyStatus==='sending';
+  const errorHtml = c.verifyStatus==='error' ? `<p class="small" style="color:var(--bad);margin-top:6px;">${c.verifyError}</p>` : '';
+  return `<div class="row-actions" style="margin-top:8px;">
+    <button class="btn" data-action="mark-verified" data-card="${c.id}" ${sending?'disabled':''}>
+      ${sending?'Marking verified...':'Mark verified in Lot Tracking sheet'}
+    </button>
+  </div>
+  <p class="small">Writes back to the Reagent Master row for ${job.instrument} / ${c.category} / ${c.analyteName||'(analyte)'}.</p>
+  ${errorHtml}`;
+}
+
+/* shared datalist for analyte autocomplete */
+function analyteDatalist(){
+  const opts = Object.values(CLIA_TEA).map(v=>v.label);
+  let dl = document.getElementById('analyte-list');
+  if(!dl){
+    dl = document.createElement('datalist');
+    dl.id='analyte-list';
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML = opts.map(o=>`<option value="${o}">`).join('');
+}
+
+/* ---------------------------- Calculations ---------------------------- */
+function allowableDiff(c, tv){
+  if(c.teaMode==='fixed') return c.teaFixed;
+  if(c.teaMode==='pct') return c.teaPct===null?null:Math.abs(tv*c.teaPct/100);
+  if(c.teaMode==='greater'){
+    const a = c.teaFixed||0;
+    const b = c.teaPct===null?0:Math.abs(tv*c.teaPct/100);
+    return Math.max(a,b);
+  }
+  return null;
+}
+
+function calcCard(id){
+  const c = getCard(id);
+  const pairs = c.rows
+    .map(r=>({sampleId:r.sampleId, oldVal:parseFloat(r.oldVal), newVal:parseFloat(r.newVal)}))
+    .filter(r=>!isNaN(r.oldVal) && !isNaN(r.newVal));
+  if(pairs.length===0){ c.calc=null; return; }
+
+  const n = pairs.length;
+  const meanOld = pairs.reduce((s,r)=>s+r.oldVal,0)/n;
+  const meanNew = pairs.reduce((s,r)=>s+r.newVal,0)/n;
+  const diffs = pairs.map(r=>r.newVal-r.oldVal);
+  const meanDiff = diffs.reduce((s,d)=>s+d,0)/n;
+  const sdDiff = Math.sqrt(diffs.reduce((s,d)=>s+Math.pow(d-meanDiff,2),0)/Math.max(n-1,1));
+  const meanBiasPct = meanOld!==0 ? (meanDiff/meanOld)*100 : 0;
+
+  let maxAbsPct = 0, flaggedCount = 0;
+  pairs.forEach(r=>{
+    const diff = r.newVal-r.oldVal;
+    const pct = r.oldVal!==0 ? Math.abs(diff/r.oldVal*100) : 0;
+    if(pct>maxAbsPct) maxAbsPct = pct;
+    const allowed = allowableDiff(c, r.oldVal);
+    if(allowed!==null && Math.abs(diff) > allowed) flaggedCount++;
+  });
+
+  const allowedAtMean = allowableDiff(c, meanOld) || 0;
+  const pass = Math.abs(meanDiff) <= allowedAtMean;
+
+  c.calc = {n, meanOld, meanNew, meanDiff, sdDiff, meanBiasPct, maxAbsPct, flaggedCount, allowedAtMean, pass};
+}
+
+/* ---------------------------- AI extraction from printout ---------------------------- */
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(r.result.split(',')[1]);
+    r.onerror = ()=>reject(new Error('read failed'));
+    r.readAsDataURL(file);
+  });
+}
+
+async function extractFromFile(id, file){
+  const c = getCard(id);
+  c.extractStatus = 'Reading file...';
+  render();
+  try{
+    const base64 = await fileToBase64(file);
+    const isPdf = file.type === 'application/pdf';
+    const mediaType = isPdf ? 'application/pdf' : (file.type || 'image/png');
+
+    c.extractStatus = 'Sending to Claude for extraction...';
+    render();
+
+    const contentBlock = isPdf
+      ? { type:'document', source:{type:'base64', media_type:mediaType, data:base64} }
+      : { type:'image', source:{type:'base64', media_type:mediaType, data:base64} };
+
+    const instructions = `This is a clinical lab instrument printout used for a lot-to-lot reagent or calibrator verification study. The printout may contain ONE analyte with a clean table of paired results, OR it may contain MULTIPLE analytes mixed together with many other data points (e.g. a DxI-style results dump).
+
+Extract EVERY individual numeric result you can find that looks like a sample result tied to an analyte, a sample/specimen identifier, and a lot or run identifier/column header. Do not try to guess which lot is "old" vs "new" -- just report the column header / lot label exactly as printed.
+
+Return ONLY raw JSON (no markdown fences, no commentary) in this exact shape:
+{"records":[{"analyte":"<analyte name as printed>","sampleId":"<sample/specimen id as printed>","label":"<column header or lot/run identifier as printed>","value":<numeric value>}]}
+
+If a sample only has one value with no clear pairing column, still include it with whatever label is available. If you genuinely cannot find any tabular numeric data, return {"records":[]}.`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:1000,
+        messages:[{
+          role:"user",
+          content:[ contentBlock, {type:'text', text:instructions} ]
+        }]
+      })
+    });
+    const data = await response.json();
+    const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    const cleaned = textBlocks.replace(/```json|```/g,'').trim();
+    let parsed;
+    try{ parsed = JSON.parse(cleaned); }
+    catch(e){ throw new Error('Could not parse AI response as JSON. Raw response: ' + cleaned.slice(0,300)); }
+
+    const records = (parsed.records||[]).filter(r=>r.value!==undefined && r.value!==null && !isNaN(parseFloat(r.value)));
+    if(records.length===0){
+      c.extractStatus = 'No tabular numeric data found in that file. Try a clearer image, or use "Paste / type data" instead.';
+      render();
+      return;
+    }
+    const analyteSet = [...new Set(records.map(r=>r.analyte||'(unspecified)'))];
+    const labelSet = [...new Set(records.map(r=>r.label||'(unspecified)'))];
+    c.extraction = { records, analytes: analyteSet, labels: labelSet };
+    c.extractAnalyteFilter = analyteSet.length===1 ? analyteSet[0] : '';
+    c.extractOldLabel = '';
+    c.extractNewLabel = '';
+    c.extractStatus = `Extracted ${records.length} data point(s). Review and map the columns below, then pair into the table.`;
+  } catch(err){
+    c.extractStatus = 'Extraction failed: ' + err.message;
+  }
+  render();
+}
+
+function applyExtraction(id){
+  const c = getCard(id);
+  if(!c.extraction || !c.extractOldLabel || !c.extractNewLabel){
+    c.extractStatus = 'Choose an analyte and both the old-lot and new-lot column/label before pairing.';
+    render();
+    return;
+  }
+  const recs = c.extraction.records.filter(r=>{
+    const a = r.analyte || '(unspecified)';
+    return !c.extractAnalyteFilter || a === c.extractAnalyteFilter;
+  });
+  const byOld = {}, byNew = {};
+  recs.forEach(r=>{
+    const lab = r.label || '(unspecified)';
+    const sid = r.sampleId || ('row'+Math.random());
+    if(lab === c.extractOldLabel) byOld[sid] = r.value;
+    if(lab === c.extractNewLabel) byNew[sid] = r.value;
+  });
+  const sampleIds = [...new Set([...Object.keys(byOld), ...Object.keys(byNew)])];
+  const newRows = [];
+  sampleIds.forEach(sid=>{
+    if(byOld[sid]!==undefined && byNew[sid]!==undefined){
+      newRows.push({id:c.rowIdSeed++, sampleId:sid, oldVal:byOld[sid], newVal:byNew[sid]});
+    }
+  });
+  if(newRows.length===0){
+    c.extractStatus = 'No sample IDs matched between the two chosen labels -- check the mapping, or enter rows manually below.';
+    render();
+    return;
+  }
+  c.rows = c.rows.concat(newRows);
+  c.extractStatus = `Paired ${newRows.length} sample(s) into the table below.`;
+  if(!c.analyteName && c.extractAnalyteFilter && c.extractAnalyteFilter!=='(unspecified)'){
+    c.analyteName = c.extractAnalyteFilter;
+    applyTeaLookup(c);
+  }
+  render();
+}
+
+/* ---------------------------- TEa autofill ---------------------------- */
+function applyTeaLookup(c){
+  const match = lookupTea(c.analyteName);
+  if(match){
+    c.teaMode = match.mode;
+    c.teaPct = match.pct!==undefined ? match.pct : null;
+    c.teaFixed = match.fixed!==undefined ? match.fixed : null;
+    c.teaFixedUnit = match.fixedUnit||'';
+    c.teaSource = 'CLIA 2025 acceptable performance criteria (auto-matched)';
+    if(!c.unit) c.unit = match.unit;
+  } else {
+    c.teaSource = 'No CLIA match -- enter TEa manually';
+  }
+}
+
+/* ---------------------------- Event handling ---------------------------- */
+function attachHandlers(){
+  analyteDatalist();
+  document.querySelectorAll('[data-job]').forEach(el=>{
+    el.addEventListener('input', e=>{ job[el.dataset.job] = el.value; });
+    el.addEventListener('change', e=>{ job[el.dataset.job] = el.value; });
+  });
+  document.querySelectorAll('[data-field]').forEach(el=>{
+    el.addEventListener('input', e=>{
+      const c = getCard(parseInt(el.dataset.card));
+      if(!c) return;
+      c[el.dataset.field] = el.value;
+      if(el.dataset.field==='analyteName' && !c.teaOverridden) applyTeaLookup(c);
+      if(['teaPct','teaFixed'].includes(el.dataset.field)){
+        c[el.dataset.field] = el.value===''? null : parseFloat(el.value);
+        c.teaOverridden = true;
+      }
+    });
+    el.addEventListener('change', e=>{
+      if(el.dataset.field==='analyteName'){
+        const c = getCard(parseInt(el.dataset.card));
+        applyTeaLookup(c);
+        render();
+      }
+      if(el.dataset.field==='teaMode'){
+        const c = getCard(parseInt(el.dataset.card));
+        c.teaMode = el.value;
+        render();
+      }
+    });
+  });
+  document.querySelectorAll('[data-row-field]').forEach(el=>{
+    el.addEventListener('input', e=>{
+      const c = getCard(parseInt(el.dataset.card));
+      const r = c.rows.find(r=>r.id===parseInt(el.dataset.row));
+      if(r) r[el.dataset.rowField] = el.value;
+    });
+    el.addEventListener('paste', e=>{
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      if(!text || !/[\t\n\r]/.test(text)) return; // single value -- let default paste happen
+      e.preventDefault();
+      const c = getCard(parseInt(el.dataset.card));
+      const order = ['sampleId','oldVal','newVal'];
+      const startRowIdx = c.rows.findIndex(r=>r.id===parseInt(el.dataset.row));
+      const startColIdx = order.indexOf(el.dataset.rowField);
+      const lines = text.split(/\r\n|\n|\r/).filter(l=>l.length>0);
+      lines.forEach((line,i)=>{
+        const cells = line.split('\t');
+        let rowIdx = startRowIdx + i;
+        if(rowIdx >= c.rows.length){
+          c.rows.push({id:c.rowIdSeed++, sampleId:'', oldVal:'', newVal:''});
+          rowIdx = c.rows.length - 1;
+        }
+        cells.forEach((val,j)=>{
+          const colIdx = startColIdx + j;
+          if(colIdx < order.length) c.rows[rowIdx][order[colIdx]] = val.trim();
+        });
+      });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action-select]').forEach(el=>{
+    el.addEventListener('change', e=>{
+      const c = getCard(parseInt(el.dataset.card));
+      const which = el.dataset.actionSelect;
+      if(which==='extract-analyte') c.extractAnalyteFilter = el.value;
+      if(which==='extract-old') c.extractOldLabel = el.value;
+      if(which==='extract-new') c.extractNewLabel = el.value;
+    });
+  });
+  document.querySelectorAll('[data-file-input]').forEach(el=>{
+    el.addEventListener('change', e=>{
+      const id = parseInt(el.dataset.fileInput);
+      if(el.files && el.files[0]) extractFromFile(id, el.files[0]);
+    });
+  });
+  document.querySelectorAll('[data-action="trigger-file"]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      document.querySelector(`[data-file-input="${el.dataset.card}"]`).click();
+    });
+    el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('drag'); });
+    el.addEventListener('dragleave', ()=>el.classList.remove('drag'));
+    el.addEventListener('drop', e=>{
+      e.preventDefault(); el.classList.remove('drag');
+      const f = e.dataTransfer.files[0];
+      if(f) extractFromFile(parseInt(el.dataset.card), f);
+    });
+  });
+}
+
+function onAction(e){
+  const el = e.target.closest('[data-action]');
+  if(!el) return;
+  const action = el.dataset.action;
+  const cardId = el.dataset.card ? parseInt(el.dataset.card) : null;
+
+  if(action==='add-card') addAnalyteCard();
+  else if(action==='remove-card') removeAnalyteCard(cardId);
+  else if(action==='set-tab'){ getCard(cardId).activeTab = el.dataset.tab; render(); }
+  else if(action==='add-row'){
+    const c = getCard(cardId);
+    c.rows.push({id:c.rowIdSeed++, sampleId:'S'+(c.rows.length+1), oldVal:'', newVal:''});
+    render();
+  }
+  else if(action==='add-rows-5'){
+    const c = getCard(cardId);
+    for(let i=0;i<5;i++) c.rows.push({id:c.rowIdSeed++, sampleId:'S'+(c.rows.length+1), oldVal:'', newVal:''});
+    render();
+  }
+  else if(action==='remove-row'){
+    const c = getCard(cardId);
+    c.rows = c.rows.filter(r=>r.id!==parseInt(el.dataset.row));
+    render();
+  }
+  else if(action==='calc-card'){ calcCard(cardId); render(); }
+  else if(action==='apply-extraction') applyExtraction(cardId);
+  else if(action==='build-report') buildReport();
+  else if(action==='mark-verified') markVerified(cardId);
+}
+
+/* ---------------------------- Compiled report ---------------------------- */
+function buildReport(){
+  analytes.forEach(c=>calcCard(c.id));
+  render();
+  const overallPass = analytes.length>0 && analytes.every(c=>c.calc && c.calc.pass);
+  const anyMissing = analytes.some(c=>!c.calc);
+
+  const sections = analytes.map(c=>{
+    if(!c.calc) return `<div class="report-section"><h3>${c.analyteName||'(unnamed analyte)'}</h3><p class="small">No data entered for this analyte -- omitted from the verdict.</p></div>`;
+    const calc = c.calc;
+    const rowsHtml = c.rows.map(r=>{
+      const oldV=parseFloat(r.oldVal), newV=parseFloat(r.newVal);
+      if(isNaN(oldV)||isNaN(newV)) return '';
+      const diff=newV-oldV, pct=oldV!==0?(diff/oldV*100):0;
+      const allowed = allowableDiff(c, oldV);
+      const flag = allowed!==null && Math.abs(diff)>allowed;
+      return `<tr style="${flag?'background:#fcebea;':''}"><td>${r.sampleId}</td><td>${oldV}</td><td>${newV}</td><td>${diff.toFixed(2)}</td><td>${pct.toFixed(1)}%</td></tr>`;
+    }).join('');
+    return `<div class="report-section">
+      <h3>${c.analyteName||'(unnamed analyte)'} <span class="pill ${calc.pass?'pass':'fail'}">${calc.pass?'PASS':'FAIL'}</span></h3>
+      <table class="meta-table">
+        <tr><td class="k">Old lot / New lot</td><td>${c.oldLot||'--'} &rarr; ${c.newLot||'--'}</td></tr>
+        <tr><td class="k">CLIA TEa applied</td><td>${teaDescription(c)} &nbsp; <span class="small">(${c.teaSource})</span></td></tr>
+        <tr><td class="k">n / mean old / mean new</td><td>${calc.n} &nbsp; / &nbsp; ${calc.meanOld.toFixed(2)} ${c.unit} &nbsp; / &nbsp; ${calc.meanNew.toFixed(2)} ${c.unit}</td></tr>
+        <tr><td class="k">Mean bias</td><td>${calc.meanBiasPct>=0?'+':''}${calc.meanBiasPct.toFixed(1)}% (SD of differences ${calc.sdDiff.toFixed(2)} ${c.unit})</td></tr>
+        <tr><td class="k">Largest single-sample % diff</td><td>${calc.maxAbsPct.toFixed(1)}% &nbsp; (${calc.flaggedCount} of ${calc.n} sample(s) exceeded TEa individually)</td></tr>
+      </table>
+      <table>
+        <thead><tr><th>Sample ID</th><th>Old lot</th><th>New lot</th><th>Diff</th><th>% diff</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  const reportHtml = `
+    <div class="masthead"><h1>Lot-to-Lot Comparison Report</h1>
+      <p style="color:#c9d8e6;">${job.instrument||'Instrument not specified'} &middot; ${job.date||'date not specified'}</p>
+    </div>
+    <div class="card">
+      <table class="meta-table">
+        <tr><td class="k">Instrument</td><td>${job.instrument||'--'}</td></tr>
+        <tr><td class="k">Date performed</td><td>${job.date||'--'}</td></tr>
+        <tr><td class="k">Reason for lot change</td><td>${job.reason||'--'}</td></tr>
+        <tr><td class="k">Tested by</td><td>${job.performedBy||'--'}</td></tr>
+        <tr><td class="k">Reviewed by</td><td>${job.reviewedBy||'--'}</td></tr>
+        <tr><td class="k">Comments</td><td>${job.comments||'--'}</td></tr>
+      </table>
+      <div class="verdict-banner ${overallPass?'pass':'fail'}" style="margin-top:6px;">
+        Overall verdict: ${overallPass?'ACCEPTABLE -- new lot may be released into service':'NOT ACCEPTABLE -- one or more analytes failed CLIA acceptance criteria'}
+        ${anyMissing?' (one or more analyte cards had no data and were excluded from this verdict)':''}
+      </div>
+    </div>
+    ${sections}
+    <div class="card">
+      <p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), acceptable performance criteria enforced by PT providers beginning January 1, 2025, unless overridden above with a lab-defined limit. Data extracted from uploaded printouts via AI was not independently re-verified by this tool against the source document -- confirm accuracy before filing as a quality record.</p>
+      <div class="sig-grid">
+        <div><div class="sig-line">Tested by / date</div></div>
+        <div><div class="sig-line">Reviewed by / date</div></div>
+      </div>
+    </div>
+    <div class="no-print" style="text-align:center;margin-top:16px;">
+      <button class="btn" onclick="window.print()">Print / save as PDF</button>
+      <button class="btn secondary" onclick="downloadReport()">Download standalone HTML</button>
+      <button class="btn secondary" onclick="document.getElementById('report').scrollIntoView({behavior:'smooth'})">Jump to report</button>
+    </div>
+  `;
+  document.getElementById('report').innerHTML = reportHtml;
+  document.getElementById('report').style.display = 'block';
+  document.getElementById('report').scrollIntoView({behavior:'smooth'});
+}
+
+function downloadReport(){
+  const reportInner = document.getElementById('report').innerHTML.replace(/<div class="no-print"[\s\S]*?<\/div>\s*$/,'');
+  const styles = document.querySelector('style').outerHTML;
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lot-to-Lot Comparison Report</title>${styles}</head><body><div style="max-width:980px;margin:0 auto;padding:24px;">${reportInner}</div></body></html>`;
+  const blob = new Blob([html], {type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'lot_to_lot_comparison_report.html';
+  a.click();
+}
+
+/* ---------------------------- Init ---------------------------- */
+function applyUrlParams(){
+  const params = new URLSearchParams(window.location.search);
+  const instrument = params.get('instrument');
+  const category = params.get('category');
+  const analyte = params.get('analyte');
+  const oldLot = params.get('oldLot');
+  const newLot = params.get('newLot');
+  if(instrument) job.instrument = instrument;
+  if(analyte || oldLot || newLot){
+    const c = newCard();
+    if(analyte){ c.analyteName = analyte; applyTeaLookup(c); }
+    if(oldLot) c.oldLot = oldLot;
+    if(newLot) c.newLot = newLot;
+    if(category) c.category = category;
+    analytes.push(c);
+  } else {
+    analytes.push(newCard());
+  }
+}
+
+/* ---------------------------- Mark verified (writes back to the Lot Tracking sheet) ---------------------------- */
+function markVerified(cardId){
+  const c = getCard(cardId);
+  if(!c) return;
+  if(!APPS_SCRIPT_URL){
+    c.verifyStatus = 'error';
+    c.verifyError = 'APPS_SCRIPT_URL is not set in this file -- nothing to call.';
+    render();
+    return;
+  }
+  c.verifyStatus = 'sending';
+  c.verifyError = '';
+  render();
+
+  const payload = {
+    action: 'markVerified',
+    instrument: job.instrument,
+    category: c.category,
+    item: c.analyteName,
+    verifiedBy: job.reviewedBy || job.performedBy || ''
+  };
+
+  // Sent as text/plain on purpose -- this keeps it a CORS "simple request" so the
+  // browser doesn't send a preflight OPTIONS call, which Apps Script web apps don't handle.
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.success){
+      c.verifyStatus = 'done';
+    } else {
+      c.verifyStatus = 'error';
+      c.verifyError = data.error || 'Unknown error from the sheet.';
+    }
+    render();
+  })
+  .catch(err => {
+    c.verifyStatus = 'error';
+    c.verifyError = err.message;
+    render();
+  });
+}
+
+applyUrlParams();
+document.body.addEventListener('click', onAction);
+render();
+</script>
+</body>
+</html>
