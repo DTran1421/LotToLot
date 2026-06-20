@@ -36,7 +36,7 @@ function reportTeaDescription(c) {
 
 function reportAnalyteSectionHtml(c) {
   if (!c.calc) {
-    return '<div class="report-section"><h3>' + (c.analyteName || '(unnamed analyte)') + '</h3><p class="small">No data entered for this analyte -- omitted from the verdict.</p></div>';
+    return '<div class="report-section"><h3>' + (c.analyteName || '(unnamed analyte)') + '</h3><p class="small">No data entered for this analyte \u2014 omitted from the verdict.</p></div>';
   }
   const calc = c.calc;
   const rowsHtml = (c.rows || []).map(function (r) {
@@ -49,13 +49,13 @@ function reportAnalyteSectionHtml(c) {
   }).join('');
   return '<div class="report-section">' +
     '<h3>' + (c.analyteName || '(unnamed analyte)') + ' <span class="pill ' + (calc.pass ? 'pass' : 'fail') + '">' + (calc.pass ? 'PASS' : 'FAIL') + '</span></h3>' +
-    '<table class="meta-table">' +
+    '<div class="stats-box"><table class="meta-table">' +
     '<tr><td class="k">Old lot / New lot</td><td>' + (c.oldLot || '--') + ' &rarr; ' + (c.newLot || '--') + '</td></tr>' +
     '<tr><td class="k">TEa applied</td><td>' + reportTeaDescription(c) + ' &nbsp; <span class="small">(' + c.teaSource + ')</span></td></tr>' +
     '<tr><td class="k">n / mean old / mean new</td><td>' + calc.n + ' &nbsp; / &nbsp; ' + calc.meanOld.toFixed(2) + ' ' + c.unit + ' &nbsp; / &nbsp; ' + calc.meanNew.toFixed(2) + ' ' + c.unit + '</td></tr>' +
     '<tr><td class="k">Mean bias</td><td>' + (calc.meanBiasPct >= 0 ? '+' : '') + calc.meanBiasPct.toFixed(1) + '% (SD of differences ' + calc.sdDiff.toFixed(2) + ' ' + c.unit + ')</td></tr>' +
     '<tr><td class="k">Largest single-sample % diff</td><td>' + calc.maxAbsPct.toFixed(1) + '% &nbsp; (' + calc.flaggedCount + ' of ' + calc.n + ' sample(s) exceeded TEa individually)</td></tr>' +
-    '</table>' +
+    '</table></div>' +
     '<table><thead><tr><th>Sample ID</th><th>Old lot</th><th>New lot</th><th>Diff</th><th>% diff</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
     '</div>';
 }
@@ -79,11 +79,6 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     ? '<tr><td class="k">Comments</td><td>' + job.comments + '</td></tr>'
     : '';
 
-  const sigGrid = reviewInfo
-    ? '<div class="sig-grid"><div><div class="sig-line">Tested by / date</div><div class="small" style="margin-top:2px;">' + (job.performedBy || '--') + ' / ' + (job.date || '--') + '</div></div>' +
-      '<div><div class="sig-line">Reviewed by / date</div><div class="small" style="margin-top:2px;">' + (reviewInfo.verifiedBy || '--') + ' / ' + (reviewInfo.dateVerified ? new Date(reviewInfo.dateVerified).toLocaleDateString() : '--') + '</div></div></div>'
-    : '<p class="small">Tested by: ' + (job.performedBy || '--') + ' &middot; ' + (job.date || '--') + '</p>';
-
   return '<div class="masthead"><h1>Lot-to-Lot Comparison Report' + (reviewInfo ? ' (Final - Reviewed)' : ' (Preview - Pending Review)') + '</h1>' +
     '<p style="color:#c9d8e6;">' + (job.instrument || 'Instrument not specified') + ' &middot; ' + (job.date || 'date not specified') + '</p></div>' +
     '<div class="card"><table class="meta-table">' +
@@ -95,11 +90,9 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     commentsRow +
     '</table>' +
     '<div class="verdict-banner ' + (overallPass ? 'pass' : 'fail') + '" style="margin-top:6px;">' +
-    'Overall verdict: ' + (overallPass ? 'ACCEPTABLE -- new lot may be released into service' : 'NOT ACCEPTABLE -- one or more analytes failed CLIA acceptance criteria') +
+    'Overall verdict: ' + (overallPass ? 'ACCEPTABLE \u2014 new lot may be released into service' : 'NOT ACCEPTABLE \u2014 one or more analytes failed CLIA acceptance criteria') +
     (anyMissing ? ' (one or more analyte cards had no data and were excluded from this verdict)' : '') +
     '</div></div>' +
     sections +
-    '<div class="card"><p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), effective January 1, 2025, unless overridden above with a lab-defined limit.</p>' +
-    sigGrid +
-    '</div>';
+    '<footer class="report-footer"><p class="small">TEa source: CLIA 2024 Final Rule (CMS-3355-F), effective January 1, 2025, unless overridden above with a lab-defined limit.</p></footer>';
 }

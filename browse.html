@@ -9,7 +9,7 @@
 <style>
   :root{--navy:#0f2a47;--navy-light:#1c3f63;--bg:#f4f6f8;--card:#ffffff;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;overflow-x:hidden;}
   .wrap{max-width:1700px;margin:0 auto;padding:18px;}
   .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
   .masthead h1{margin:0 0 4px;font-size:18px;}
@@ -54,6 +54,8 @@
   .verdict-banner.fail{background:var(--bad-bg);color:var(--bad);}
   .small{font-size:12px;color:var(--muted);}
   .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px;}
+  .stats-box{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;background:#fafbfc;}
+  .report-footer{border-top:1px solid var(--line);margin-top:24px;padding-top:14px;}
   .sig-line{border-top:1px solid #333;margin-top:34px;padding-top:4px;font-size:11.5px;color:var(--muted);}
   #pdf-render-target{width:980px;}
 </style>
