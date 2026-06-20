@@ -465,6 +465,15 @@ function renderAnalyteCard(c){
       <div class="field"><label>Old lot #</label><input type="text" value="${c.oldLot}" data-field="oldLot" data-card="${c.id}"></div>
       <div class="field"><label>New lot #</label><input type="text" value="${c.newLot}" data-field="newLot" data-card="${c.id}"></div>
     </div>
+    <div class="grid cols-4" style="margin-top:10px;">
+      <div class="field"><label>Category (for Lot Tracking write-back)</label>
+        <select data-field="category" data-card="${c.id}">
+          <option value="" ${c.category===''?'selected':''}>-- not set, won't write back --</option>
+          ${["Reagent","Calibrator","Control","Chemical","Equipment","Misc","Linearity"].map(o=>`<option value="${o}" ${c.category===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <p class="hint">Category only needs to be set if you want "Save report" to write a status update back to the Reagent Master sheet for this item. It auto-fills when you arrive here via a "Start verification" link.</p>
 
     <div class="grid cols-3" style="margin-top:10px;">
       <div class="field"><label>TEa source</label><input type="text" value="${c.teaSource}" disabled style="background:#f6f8fa;color:var(--muted);"></div>
