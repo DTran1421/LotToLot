@@ -333,7 +333,7 @@ function load(){
 }
 
 function loadHistory(){
-  fetch('/api/orders').then(function(r){ return r.json(); }).then(function(data){
+  fetch('/api/inventory?action=list-orders').then(function(r){ return r.json(); }).then(function(data){
     if(data.error){ alert('Error loading order history: ' + data.error); return; }
     const body = document.getElementById('historyBody');
     if(data.length === 0){
@@ -465,7 +465,7 @@ function setStatus(msg, cls){
 }
 
 function createOrderRecord(items, notes){
-  return fetch('/api/orders', {
+  return fetch('/api/inventory?action=create-order', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ items: items, notes: notes })
@@ -550,7 +550,7 @@ function generateAndSend(){
     })
     .then(function(encoded){
       setStatus('Sending email...');
-      return fetch('/api/send-order-email', {
+      return fetch('/api/inventory?action=send-email', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
