@@ -18,6 +18,7 @@ module.exports = async (req, res) => {
         analyzer: body.analyzer.trim(),
         item: body.item.trim(),
         category: body.category.trim(),
+        manufacturer_name: body.manufacturer_name || null,
         manufacturer_ref: body.manufacturer_ref || null,
         mckesson_ref: body.mckesson_ref || null,
       };
