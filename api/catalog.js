@@ -3,7 +3,7 @@ const supabase = require('./_supabase');
 module.exports = async (req, res) => {
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase.from('catalog').select('*').order('analyzer').order('item');
+      const { data, error } = await supabase.from('catalog').select('*').order('analyzer').order('category').order('item');
       if (error) throw error;
       return res.status(200).json(data);
     }

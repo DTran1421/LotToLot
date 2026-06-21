@@ -120,18 +120,34 @@ function renderHead(){
   });
 }
 
+var TIE_BREAK_COLUMNS = ['analyzer', 'category', 'item'];
+
+function compareValues(a, b, col, dir){
+  const av = (a[col] == null || a[col] === '') ? null : String(a[col]).toLowerCase();
+  const bv = (b[col] == null || b[col] === '') ? null : String(b[col]).toLowerCase();
+  // Rows missing this value sort to the bottom regardless of direction.
+  if(av === null && bv === null) return 0;
+  if(av === null) return 1;
+  if(bv === null) return -1;
+  if(av < bv) return -1 * dir;
+  if(av > bv) return 1 * dir;
+  return 0;
+}
+
 function sortRows(rows){
-  const col = sortColumn;
-  const dir = sortDirection === 'asc' ? 1 : -1;
+  const primaryCol = sortColumn;
+  const primaryDir = sortDirection === 'asc' ? 1 : -1;
+  // Tie-break chain always runs Instrument -> Material type -> Item (ascending),
+  // skipping the primary column since it's already been compared.
+  const tieBreakCols = TIE_BREAK_COLUMNS.filter(function(c){ return c !== primaryCol; });
+
   return rows.slice().sort(function(a, b){
-    const av = (a[col] == null || a[col] === '') ? null : String(a[col]).toLowerCase();
-    const bv = (b[col] == null || b[col] === '') ? null : String(b[col]).toLowerCase();
-    // Rows missing this value sort to the bottom regardless of direction.
-    if(av === null && bv === null) return 0;
-    if(av === null) return 1;
-    if(bv === null) return -1;
-    if(av < bv) return -1 * dir;
-    if(av > bv) return 1 * dir;
+    const primary = compareValues(a, b, primaryCol, primaryDir);
+    if(primary !== 0) return primary;
+    for(var i = 0; i < tieBreakCols.length; i++){
+      const tie = compareValues(a, b, tieBreakCols[i], 1);
+      if(tie !== 0) return tie;
+    }
     return 0;
   });
 }

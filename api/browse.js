@@ -4,7 +4,7 @@ const supabase = require('./_supabase');
 // or raw SQL. This is the one thing standing between a client-controlled
 // string and arbitrary table access.
 const TABLES = {
-  catalog: { order: [['analyzer', false], ['item', false]], limit: 1000 },
+  catalog: { order: [['analyzer', false], ['category', false], ['item', false]], limit: 1000 },
   reagent_master: { order: [['instrument', false], ['item', false]], limit: 1000 },
   receiving_log: { order: [['logged_at', true]], limit: 500 },
   lot_to_lot_reports: { order: [['submitted_at', true]], limit: 1000 },
