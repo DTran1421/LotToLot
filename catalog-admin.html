@@ -26,6 +26,10 @@
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
   th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+  th.sortable:hover{color:var(--navy);}
+  th.sortable .arrow{display:inline-block;width:10px;font-size:9px;opacity:.4;}
+  th.sortable.active .arrow{opacity:1;color:var(--navy);}
   .small{font-size:12px;color:var(--muted);}
   .toolbar{display:flex;gap:10px;margin-bottom:10px;}
   .toolbar input{width:280px;}
@@ -66,7 +70,7 @@
       <input type="text" id="search" placeholder="Filter by instrument, material type, item, or reference #...">
     </div>
     <table>
-      <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Actions</th></tr></thead>
+      <thead><tr id="tableHead"></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </div>
@@ -74,6 +78,16 @@
 
 <script>
 var allRows = [];
+var sortColumn = 'analyzer';
+var sortDirection = 'asc'; // 'asc' or 'desc'
+
+var SORT_COLUMNS = [
+  { key: 'analyzer', label: 'Instrument' },
+  { key: 'category', label: 'Material type' },
+  { key: 'item', label: 'Item' },
+  { key: 'manufacturer_ref', label: 'Mfr ref #' },
+  { key: 'mckesson_ref', label: 'McKesson ref #' }
+];
 
 function escapeHtml(s){
   const d = document.createElement('div');
@@ -81,15 +95,56 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
+function renderHead(){
+  const head = document.getElementById('tableHead');
+  head.innerHTML = SORT_COLUMNS.map(function(c){
+    const isActive = sortColumn === c.key;
+    const arrow = isActive ? (sortDirection === 'asc' ? '\u25B2' : '\u25BC') : '\u25B2';
+    return '<th class="sortable' + (isActive ? ' active' : '') + '" data-col="' + c.key + '">' +
+      escapeHtml(c.label) + ' <span class="arrow">' + arrow + '</span></th>';
+  }).join('') + '<th>Actions</th>';
+
+  head.querySelectorAll('th.sortable').forEach(function(th){
+    th.addEventListener('click', function(){
+      const col = th.getAttribute('data-col');
+      if(sortColumn === col){
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortColumn = col;
+        sortDirection = 'asc';
+      }
+      render();
+    });
+  });
+}
+
+function sortRows(rows){
+  const col = sortColumn;
+  const dir = sortDirection === 'asc' ? 1 : -1;
+  return rows.slice().sort(function(a, b){
+    const av = (a[col] == null || a[col] === '') ? null : String(a[col]).toLowerCase();
+    const bv = (b[col] == null || b[col] === '') ? null : String(b[col]).toLowerCase();
+    // Rows missing this value sort to the bottom regardless of direction.
+    if(av === null && bv === null) return 0;
+    if(av === null) return 1;
+    if(bv === null) return -1;
+    if(av < bv) return -1 * dir;
+    if(av > bv) return 1 * dir;
+    return 0;
+  });
+}
+
 function render(){
+  renderHead();
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const filtered = allRows.filter(function(r){
     if(!filterText) return true;
     const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
+  const sorted = sortRows(filtered);
 
-  document.getElementById('rows').innerHTML = filtered.map(function(r){
+  document.getElementById('rows').innerHTML = sorted.map(function(r){
     return '<tr>' +
       '<td>' + escapeHtml(r.analyzer) + '</td>' +
       '<td>' + escapeHtml(r.category) + '</td>' +
