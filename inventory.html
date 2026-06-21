@@ -63,8 +63,9 @@
   .status-msg.err{color:var(--bad);}
   .status-msg.ok{color:var(--good);}
   .history-row{cursor:pointer;}
+  .mck-link{color:var(--navy);text-decoration:underline;}
   .history-detail{font-size:12px;color:var(--muted);padding:0 8px 10px 8px;}
-  #pdf-render-target{width:980px;position:absolute;left:-99999px;top:0;}
+  #pdf-render-target{width:980px;}
   .pdf-doc{font-family:Inter,Arial,sans-serif;color:#172a3a;padding:20px;}
   .pdf-doc h1{font-size:18px;margin:0 0 4px;}
   .pdf-doc .meta{font-size:12px;color:#5f7385;margin-bottom:14px;}
@@ -86,6 +87,7 @@
 
   <div class="tabs">
     <div class="tab active" data-view="inventory">Inventory</div>
+    <div class="tab" data-view="par">Par Levels</div>
     <div class="tab" data-view="history">Order History</div>
   </div>
 
@@ -101,6 +103,19 @@
         <tbody id="tableBody"></tbody>
       </table>
       <div class="small" id="empty" style="display:none;padding:20px 0;text-align:center;">No items match.</div>
+    </div>
+  </div>
+
+  <div class="card" id="parView" style="display:none;">
+    <div class="toolbar">
+      <input type="text" id="parSearch" placeholder="Filter by instrument or item...">
+      <div class="small">Set par levels here -- In Stock isn't shown on this tab on purpose, so there's no risk of mixing the two fields up.</div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Par level</th></tr></thead>
+        <tbody id="parBody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -145,12 +160,18 @@ var SORT_COLUMNS = [
   { key: 'item', label: 'Item' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
   { key: 'mckesson_ref', label: 'McKesson ref #' },
+  { key: 'pack_size', label: 'Pack/unit size' },
   { key: 'in_stock', label: 'In stock' },
   { key: 'par_level', label: 'Par' },
   { key: 'order_frequency', label: 'Order freq' },
   { key: 'last_ordered_at', label: 'Last ordered' }
 ];
 var TIE_BREAK_COLUMNS = ['analyzer', 'category', 'item'];
+
+function mckessonLink(ref){
+  if(!ref) return '--';
+  return '<a href="https://mms.mckesson.com/catalog?query=' + encodeURIComponent(ref) + '" target="_blank" rel="noopener" class="mck-link">' + escapeHtml(ref) + '</a>';
+}
 
 function escapeHtml(s){
   const d = document.createElement('div');
@@ -207,13 +228,18 @@ function sortRows(rows){
 
 function renderHead(){
   const head = document.getElementById('tableHead');
-  const cols = SORT_COLUMNS.map(function(c){
+  function thFor(c){
     const isActive = sortColumn === c.key;
     const arrow = isActive ? (sortDirection === 'asc' ? '\u25B2' : '\u25BC') : '\u25B2';
     return '<th class="sortable' + (isActive ? ' active' : '') + '" data-col="' + c.key + '">' +
       escapeHtml(c.label) + ' <span class="arrow">' + arrow + '</span></th>';
-  }).join('');
-  head.innerHTML = '<tr><th style="width:30px;">Order?</th>' + cols + '<th>Updated</th></tr>';
+  }
+  // Columns up through Par, then an explicit (non-sortable) Status column for
+  // the OK/LOW pill, then the remaining sortable columns. This has to match
+  // the <td> order in render() exactly.
+  const beforeStatus = SORT_COLUMNS.slice(0, 8).map(thFor).join('');
+  const afterStatus = SORT_COLUMNS.slice(8).map(thFor).join('');
+  head.innerHTML = '<tr><th style="width:30px;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
 
   head.querySelectorAll('th.sortable').forEach(function(th){
     th.addEventListener('click', function(){
@@ -237,7 +263,7 @@ function render(){
   let filtered = allRows.filter(function(r){
     if(lowOnly && !isLowStock(r)) return false;
     if(!filterText) return true;
-    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'')).toLowerCase();
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
   filtered = sortRows(filtered);
@@ -252,9 +278,10 @@ function render(){
       '<td>' + escapeHtml(r.category) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
+      '<td class="small">' + mckessonLink(r.mckesson_ref) + '</td>' +
+      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.in_stock == null ? 0 : r.in_stock) + '" onchange="updateField(' + r.catalog_id + ', \'in_stock\', this.value, this)"></td>' +
-      '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.par_level == null ? 0 : r.par_level) + '" onchange="updateField(' + r.catalog_id + ', \'par_level\', this.value, this)"></td>' +
+      '<td class="small" style="text-align:right;padding-right:14px;">' + (r.par_level == null ? 0 : r.par_level) + '</td>' +
       '<td>' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
       '<td class="small">' + r.order_frequency + ' order' + (r.order_frequency === 1 ? '' : 's') + '</td>' +
       '<td class="small">' + fmtDate(r.last_ordered_at) + '</td>' +
@@ -313,8 +340,10 @@ function updateField(catalogId, field, value, inputEl){
       if(selected[catalogId]) selected[catalogId].row = row;
     }
     inputEl.classList.remove('dirty');
-    // Re-render so the LOW/OK badge and row highlight reflect the new value.
+    // Re-render both views so the LOW/OK badge, row highlight, and the Par
+    // Levels tab all reflect the new value regardless of which tab is active.
     render();
+    renderParView();
   })
   .catch(function(err){
     alert('Save failed: ' + err.message);
@@ -328,8 +357,34 @@ function load(){
   fetch('/api/inventory').then(function(r){ return r.json(); }).then(function(data){
     if(data.error){ alert('Error loading inventory: ' + data.error); return; }
     allRows = data;
+    // Auto-select anything already below par so the order list starts
+    // pre-populated -- the tech can still uncheck individual items.
+    selected = {};
+    allRows.forEach(function(r){
+      if(isLowStock(r)){
+        const qty = Math.max(0, Number(r.par_level || 0) - Number(r.in_stock || 0));
+        selected[r.catalog_id] = { row: r, qty: qty || 1 };
+      }
+    });
     render();
   });
+}
+
+function renderParView(){
+  const filterText = document.getElementById('parSearch').value.trim().toLowerCase();
+  const filtered = allRows.filter(function(r){
+    if(!filterText) return true;
+    return (r.analyzer + ' ' + r.item).toLowerCase().indexOf(filterText) !== -1;
+  });
+  const sorted = sortRows(filtered.slice());
+  document.getElementById('parBody').innerHTML = sorted.map(function(r){
+    return '<tr>' +
+      '<td>' + escapeHtml(r.analyzer) + '</td>' +
+      '<td>' + escapeHtml(r.category) + '</td>' +
+      '<td>' + escapeHtml(r.item) + '</td>' +
+      '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.par_level == null ? 0 : r.par_level) + '" onchange="updateField(' + r.catalog_id + ', \'par_level\', this.value, this)"></td>' +
+    '</tr>';
+  }).join('');
 }
 
 function loadHistory(){
@@ -361,10 +416,14 @@ document.querySelectorAll('.tab').forEach(function(tab){
     tab.classList.add('active');
     const view = tab.getAttribute('data-view');
     document.getElementById('inventoryView').style.display = view === 'inventory' ? 'block' : 'none';
+    document.getElementById('parView').style.display = view === 'par' ? 'block' : 'none';
     document.getElementById('historyView').style.display = view === 'history' ? 'block' : 'none';
     if(view === 'history') loadHistory();
+    if(view === 'par') renderParView();
   });
 });
+
+document.getElementById('parSearch').addEventListener('input', renderParView);
 
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('lowStockOnly').addEventListener('change', render);
@@ -382,7 +441,8 @@ function openOrderModal(){
       '<td>' + escapeHtml(r.analyzer) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
+      '<td class="small">' + mckessonLink(r.mckesson_ref) + '</td>' +
+      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
       '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value)"></td>' +
     '</tr>';
@@ -394,7 +454,7 @@ function openOrderModal(){
         '<button class="close-x" onclick="closeOrderModal()">&times;</button>' +
         '<h2>Generate Order Report</h2>' +
         '<div class="table-scroll"><table>' +
-          '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>' +
+          '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>' +
           '<tbody>' + rowsHtml + '</tbody>' +
         '</table></div>' +
         '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Notes (optional)</label>' +
@@ -429,13 +489,14 @@ function buildOrderPdfHtml(items, notes){
   const rows = items.map(function(it){
     return '<tr><td>' + escapeHtml(it.analyzer) + '</td><td>' + escapeHtml(it.item) + '</td>' +
       '<td>' + escapeHtml(it.manufacturer_ref||'--') + '</td><td>' + escapeHtml(it.mckesson_ref||'--') + '</td>' +
+      '<td>' + escapeHtml(it.pack_size||'--') + '</td>' +
       '<td style="text-align:right;">' + it.qty + '</td></tr>';
   }).join('');
   const notesHtml = notes && notes.trim() ? '<div class="notes-box"><strong>Notes:</strong> ' + escapeHtml(notes.trim()) + '</div>' : '';
   return '<div class="pdf-doc">' +
     '<h1>Altru Diagnostics Order Report</h1>' +
     '<div class="meta">Generated ' + now.toLocaleString() + '</div>' +
-    '<table><thead><tr><th>Instrument</th><th>Item</th><th>Mfr Ref #</th><th>McKesson Ref #</th><th style="text-align:right;">Qty</th></tr></thead>' +
+    '<table><thead><tr><th>Instrument</th><th>Item</th><th>Mfr Ref #</th><th>McKesson Ref #</th><th>Pack/Unit Size</th><th style="text-align:right;">Qty</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table>' +
     notesHtml +
     '</div>';
@@ -452,6 +513,7 @@ function buildItemsPayload(){
       item: r.item,
       manufacturer_ref: r.manufacturer_ref,
       mckesson_ref: r.mckesson_ref,
+      pack_size: r.pack_size,
       qty: sel.qty
     };
   });

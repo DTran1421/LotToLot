@@ -16,7 +16,7 @@
   .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
   .card h2{margin:0 0 12px;font-size:15px;color:var(--navy);}
   .grid{display:grid;gap:10px;}
-  .grid.cols-5{grid-template-columns:1.6fr 1fr 1fr 1fr 1fr 1fr;}
+  .grid.cols-5{grid-template-columns:1.4fr 1fr 1fr 1fr 1fr 1fr 1fr;}
   label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
   input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;}
   button{padding:9px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
@@ -56,6 +56,7 @@
       <div><label>Manufacturer name</label><input id="f_manufacturer_name" placeholder="e.g. Beckman Coulter"></div>
       <div><label>Manufacturer ref #</label><input id="f_manufacturer_ref" placeholder="e.g. OSR6102"></div>
       <div><label>McKesson ref #</label><input id="f_mckesson_ref" placeholder="optional"></div>
+      <div><label>Pack/unit size</label><input id="f_pack_size" placeholder="e.g. 1000/BG, 6BG/BX"></div>
     </div>
     <datalist id="instrument-list"></datalist>
     <datalist id="category-list"></datalist>
@@ -88,7 +89,8 @@ var SORT_COLUMNS = [
   { key: 'item', label: 'Item' },
   { key: 'manufacturer_name', label: 'Mfr name' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
-  { key: 'mckesson_ref', label: 'McKesson ref #' }
+  { key: 'mckesson_ref', label: 'McKesson ref #' },
+  { key: 'pack_size', label: 'Pack/unit size' }
 ];
 
 function escapeHtml(s){
@@ -157,7 +159,7 @@ function render(){
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const filtered = allRows.filter(function(r){
     if(!filterText) return true;
-    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'')).toLowerCase();
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
   const sorted = sortRows(filtered);
@@ -170,6 +172,7 @@ function render(){
       '<td class="small">' + escapeHtml(r.manufacturer_name||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
+      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td class="actions-cell">' +
         '<button class="secondary" onclick="editRow(' + r.id + ')">Edit</button> ' +
         '<button class="danger" onclick="deleteRow(' + r.id + ')">Delete</button>' +
@@ -194,7 +197,7 @@ function load(){
 function resetForm(){
   document.getElementById('editId').value = '';
   document.getElementById('formTitle').textContent = 'Add new item';
-  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref'].forEach(function(id){
+  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_pack_size'].forEach(function(id){
     document.getElementById(id).value = '';
   });
   document.getElementById('formStatus').textContent = '';
@@ -211,6 +214,7 @@ function editRow(id){
   document.getElementById('f_manufacturer_name').value = r.manufacturer_name || '';
   document.getElementById('f_manufacturer_ref').value = r.manufacturer_ref || '';
   document.getElementById('f_mckesson_ref').value = r.mckesson_ref || '';
+  document.getElementById('f_pack_size').value = r.pack_size || '';
   window.scrollTo(0,0);
 }
 
@@ -224,7 +228,8 @@ function save(){
     item: document.getElementById('f_item').value,
     manufacturer_name: document.getElementById('f_manufacturer_name').value,
     manufacturer_ref: document.getElementById('f_manufacturer_ref').value,
-    mckesson_ref: document.getElementById('f_mckesson_ref').value
+    mckesson_ref: document.getElementById('f_mckesson_ref').value,
+    pack_size: document.getElementById('f_pack_size').value
   };
   statusEl.textContent = 'Saving...';
   fetch('/api/catalog', {

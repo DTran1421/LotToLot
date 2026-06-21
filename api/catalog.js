@@ -21,6 +21,7 @@ module.exports = async (req, res) => {
         manufacturer_name: body.manufacturer_name || null,
         manufacturer_ref: body.manufacturer_ref || null,
         mckesson_ref: body.mckesson_ref || null,
+        pack_size: body.pack_size || null,
       };
 
       if (body.id) {
