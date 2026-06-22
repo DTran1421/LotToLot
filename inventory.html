@@ -113,7 +113,7 @@
     </div>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Par level</th></tr></thead>
+        <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
         <tbody id="parBody"></tbody>
       </table>
     </div>
@@ -383,6 +383,7 @@ function renderParView(){
       '<td>' + escapeHtml(r.analyzer) + '</td>' +
       '<td>' + escapeHtml(r.category) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
+      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.par_level == null ? 0 : r.par_level) + '" onchange="updateField(' + r.catalog_id + ', \'par_level\', this.value, this)"></td>' +
     '</tr>';
   }).join('');
