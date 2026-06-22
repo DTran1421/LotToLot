@@ -7,10 +7,11 @@ const supabase = require('./_supabase');
  * the project was already close to it before this page existed.
  *
  * GET  /api/inventory                       -> list inventory joined with catalog + order frequency
- * PATCH /api/inventory                      -> update in_stock / par_level for one catalog_id
+ * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
  * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump)
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Resend
+ * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
  */
 module.exports = async (req, res) => {
   try {
@@ -51,6 +52,7 @@ module.exports = async (req, res) => {
         par_level: r.par_level,
         last_stock_update_at: r.last_stock_update_at,
         last_ordered_at: r.last_ordered_at,
+        last_reviewed_at: r.last_reviewed_at,
         order_count: r.order_count,
         order_frequency: freqMap[r.catalog_id] || 0,
       }));
@@ -59,7 +61,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PATCH') {
-      const { catalog_id, in_stock, par_level } = req.body;
+      const { catalog_id, in_stock, par_level, last_reviewed_at } = req.body;
       if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
 
       const update = {};
@@ -70,8 +72,11 @@ module.exports = async (req, res) => {
       if (par_level !== undefined) {
         update.par_level = par_level;
       }
+      if (last_reviewed_at !== undefined) {
+        update.last_reviewed_at = last_reviewed_at;
+      }
       if (Object.keys(update).length === 0) {
-        return res.status(400).json({ error: 'Nothing to update -- provide in_stock and/or par_level' });
+        return res.status(400).json({ error: 'Nothing to update -- provide in_stock, par_level, and/or last_reviewed_at' });
       }
 
       const { data, error } = await supabase
@@ -81,6 +86,15 @@ module.exports = async (req, res) => {
         .select();
       if (error) throw error;
       return res.status(200).json(data[0]);
+    }
+
+    if (req.method === 'POST' && action === 'reset-review') {
+      const { error } = await supabase
+        .from('inventory')
+        .update({ last_reviewed_at: null })
+        .not('id', 'is', null);
+      if (error) throw error;
+      return res.status(200).json({ success: true });
     }
 
     if (req.method === 'POST' && action === 'create-order') {

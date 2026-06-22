@@ -52,6 +52,30 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
   .pill.ok{background:var(--good-bg);color:var(--good);}
   .pill.low{background:var(--bad-bg);color:var(--bad);}
+  tr.group-header{cursor:pointer;background:var(--neutral-bg);}
+  tr.group-header:hover td{background:#e3e9ef;}
+  tr.group-header td{padding:9px 10px;font-weight:700;color:var(--navy);white-space:normal;}
+  .group-chevron{display:inline-block;width:14px;color:var(--muted);}
+  .group-name{margin-right:8px;}
+  .group-meta{font-size:11.5px;font-weight:500;color:var(--muted);}
+  .group-low{color:var(--bad);font-weight:700;}
+  .toolbar-btn{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--navy);}
+  .toolbar-btn:hover{background:var(--neutral-bg);}
+  .review-pill{padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .review-pill:hover{background:var(--neutral-bg);}
+  .review-pill.reviewed{background:var(--good-bg);color:var(--good);border-color:var(--good-bg);}
+  .review-progress{font-size:12px;color:var(--muted);margin:-4px 0 10px;}
+  @media (max-width:780px){
+    table.responsive td.col-mobile-hide{display:none;}
+    table.responsive thead{display:none;}
+    table.responsive, table.responsive tbody, table.responsive tr, table.responsive td{display:block;width:100%;}
+    table.responsive tr:not(.group-header){border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:6px 10px;background:#fff;}
+    table.responsive tr.low-stock{border-color:var(--bad);}
+    table.responsive td{border:none;padding:5px 2px;text-align:right;white-space:normal;}
+    table.responsive td[data-label]::before{content:attr(data-label);float:left;font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;margin-right:8px;}
+    table.responsive tr.group-header{border-radius:8px;margin-bottom:6px;padding:0;}
+    table.responsive tr.group-header td{text-align:left;}
+  }
   .order-bar{position:fixed;left:0;right:0;bottom:0;background:var(--navy);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;box-shadow:0 -4px 14px rgba(0,0,0,.15);z-index:50;}
   .order-bar .count-text{font-weight:600;font-size:13.5px;}
   .order-bar button{padding:9px 18px;background:#fff;color:var(--navy);border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;margin-left:auto;}
@@ -108,10 +132,15 @@
     <div class="toolbar">
       <input type="text" id="search" placeholder="Filter by instrument, item, or ref #...">
       <label class="check"><input type="checkbox" id="lowStockOnly"> Show only items below par</label>
+      <label class="check"><input type="checkbox" id="unreviewedOnly"> Show only not yet reviewed</label>
+      <button type="button" class="toolbar-btn" onclick="collapseAllGroups()">Collapse all</button>
+      <button type="button" class="toolbar-btn" onclick="expandAllGroups()">Expand all</button>
+      <button type="button" class="toolbar-btn" onclick="startNewCount()">Start New Count</button>
       <div class="count" id="count"></div>
     </div>
+    <div class="review-progress" id="reviewProgress"></div>
     <div class="table-scroll">
-      <table id="dataTable">
+      <table id="dataTable" class="responsive">
         <thead id="tableHead"></thead>
         <tbody id="tableBody"></tbody>
       </table>
@@ -125,8 +154,8 @@
       <div class="small">Set par levels here -- In Stock isn't shown on this tab on purpose, so there's no risk of mixing the two fields up.</div>
     </div>
     <div class="table-scroll">
-      <table>
-        <thead><tr><th>Instrument</th><th>Material type</th><th>Item</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
+      <table class="responsive">
+        <thead><tr><th>Material type</th><th>Item</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
         <tbody id="parBody"></tbody>
       </table>
     </div>
@@ -137,7 +166,7 @@
       <div class="small">Past order reports, most recent first.</div>
     </div>
     <div class="table-scroll">
-      <table>
+      <table class="responsive">
         <thead><tr><th>Date</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -163,12 +192,13 @@ var DEFAULT_EMAIL_CC = "altru-techs@medscanlab.com";
 
 var allRows = [];
 var selected = {}; // catalog_id -> { row, qty }
-var sortColumn = 'analyzer';
+var sortColumn = 'item';
 var sortDirection = 'asc';
-var pendingSaves = {}; // catalog_id -> true while a PATCH is in flight, for UI dirty state
+var collapsedGroups = new Set(); // analyzer names currently collapsed, Inventory tab
+var collapsedParGroups = new Set(); // analyzer names currently collapsed, Par Levels tab
+var TOTAL_COLS = 12; // Order?, category, item, mfr ref, mckesson ref, pack size, in stock, par, status, order freq, last ordered, reviewed
 
 var SORT_COLUMNS = [
-  { key: 'analyzer', label: 'Instrument' },
   { key: 'category', label: 'Material type' },
   { key: 'item', label: 'Item' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
@@ -177,9 +207,20 @@ var SORT_COLUMNS = [
   { key: 'in_stock', label: 'In stock' },
   { key: 'par_level', label: 'Par' },
   { key: 'order_frequency', label: 'Order freq' },
-  { key: 'last_ordered_at', label: 'Last ordered' }
+  { key: 'last_ordered_at', label: 'Last ordered' },
+  { key: 'last_reviewed_at', label: 'Reviewed' }
 ];
-var TIE_BREAK_COLUMNS = ['analyzer', 'category', 'item'];
+var TIE_BREAK_COLUMNS = ['category', 'item'];
+
+function groupByAnalyzer(rows){
+  const map = {};
+  rows.forEach(function(r){
+    const key = r.analyzer || 'Unspecified';
+    if(!map[key]) map[key] = [];
+    map[key].push(r);
+  });
+  return map;
+}
 
 function mckessonLink(ref, url){
   if(!ref) return '--';
@@ -251,8 +292,8 @@ function renderHead(){
   // Columns up through Par, then an explicit (non-sortable) Status column for
   // the OK/LOW pill, then the remaining sortable columns. This has to match
   // the <td> order in render() exactly.
-  const beforeStatus = SORT_COLUMNS.slice(0, 8).map(thFor).join('');
-  const afterStatus = SORT_COLUMNS.slice(8).map(thFor).join('');
+  const beforeStatus = SORT_COLUMNS.slice(0, 7).map(thFor).join('');
+  const afterStatus = SORT_COLUMNS.slice(7).map(thFor).join('');
   head.innerHTML = '<tr><th style="width:30px;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
 
   head.querySelectorAll('th.sortable').forEach(function(th){
@@ -273,39 +314,96 @@ function render(){
   renderHead();
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const lowOnly = document.getElementById('lowStockOnly').checked;
+  const unreviewedOnly = document.getElementById('unreviewedOnly').checked;
 
   let filtered = allRows.filter(function(r){
     if(lowOnly && !isLowStock(r)) return false;
+    if(unreviewedOnly && r.last_reviewed_at) return false;
     if(!filterText) return true;
     const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
-  filtered = sortRows(filtered);
+
+  const groups = groupByAnalyzer(filtered);
+  const groupNames = Object.keys(groups).sort(function(a, b){ return a.localeCompare(b); });
+
+  let html = '';
+  groupNames.forEach(function(name){
+    const groupRows = sortRows(groups[name]);
+    const lowCount = groupRows.filter(isLowStock).length;
+    const reviewedCount = groupRows.filter(function(r){ return !!r.last_reviewed_at; }).length;
+    const collapsed = collapsedGroups.has(name);
+    html += '<tr class="group-header" data-group="' + escapeHtml(name) + '">' +
+      '<td colspan="' + TOTAL_COLS + '">' +
+        '<span class="group-chevron">' + (collapsed ? '\u25B8' : '\u25BE') + '</span>' +
+        '<span class="group-name">' + escapeHtml(name) + '</span>' +
+        '<span class="group-meta">' + groupRows.length + ' item' + (groupRows.length === 1 ? '' : 's') +
+          (lowCount > 0 ? ' &middot; <span class="group-low">' + lowCount + ' low</span>' : '') +
+          ' &middot; ' + reviewedCount + '/' + groupRows.length + ' reviewed' +
+        '</span>' +
+      '</td>' +
+    '</tr>';
+    if(!collapsed){
+      html += groupRows.map(function(r){
+        const low = isLowStock(r);
+        const checked = !!selected[r.catalog_id];
+        return '<tr class="' + (low ? 'low-stock' : '') + '" data-id="' + r.catalog_id + '">' +
+          '<td data-label="Order?"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleSelect(' + r.catalog_id + ', this.checked)"></td>' +
+          '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
+          '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
+          '<td class="small col-mobile-hide" data-label="Mfr ref #">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
+          '<td class="small col-mobile-hide" data-label="McKesson ref #">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
+          '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
+          '<td data-label="In stock">' + renderStepper(r.catalog_id, 'in_stock', r.in_stock == null ? 0 : r.in_stock) + '</td>' +
+          '<td class="small" data-label="Par" style="text-align:right;padding-right:14px;">' + (r.par_level == null ? 0 : r.par_level) + '</td>' +
+          '<td class="status-cell" data-label="Status">' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
+          '<td class="small col-mobile-hide" data-label="Order freq">' + r.order_frequency + ' order' + (r.order_frequency === 1 ? '' : 's') + '</td>' +
+          '<td class="small col-mobile-hide" data-label="Last ordered">' + fmtDate(r.last_ordered_at) + '</td>' +
+          '<td data-label="Reviewed">' + renderReviewedCell(r.catalog_id, r.last_reviewed_at) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  });
 
   const body = document.getElementById('tableBody');
-  body.innerHTML = filtered.map(function(r){
-    const low = isLowStock(r);
-    const checked = !!selected[r.catalog_id];
-    return '<tr class="' + (low ? 'low-stock' : '') + '" data-id="' + r.catalog_id + '">' +
-      '<td><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleSelect(' + r.catalog_id + ', this.checked)"></td>' +
-      '<td>' + escapeHtml(r.analyzer) + '</td>' +
-      '<td>' + escapeHtml(r.category) + '</td>' +
-      '<td>' + escapeHtml(r.item) + '</td>' +
-      '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
-      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
-      '<td>' + renderStepper(r.catalog_id, 'in_stock', r.in_stock == null ? 0 : r.in_stock) + '</td>' +
-      '<td class="small" style="text-align:right;padding-right:14px;">' + (r.par_level == null ? 0 : r.par_level) + '</td>' +
-      '<td class="status-cell">' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
-      '<td class="small">' + r.order_frequency + ' order' + (r.order_frequency === 1 ? '' : 's') + '</td>' +
-      '<td class="small">' + fmtDate(r.last_ordered_at) + '</td>' +
-    '</tr>';
-  }).join('');
+  body.innerHTML = html;
+
+  body.querySelectorAll('tr.group-header').forEach(function(tr){
+    tr.addEventListener('click', function(){
+      const name = tr.getAttribute('data-group');
+      if(collapsedGroups.has(name)) collapsedGroups.delete(name); else collapsedGroups.add(name);
+      render();
+    });
+  });
 
   document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
-  document.getElementById('count').textContent = filtered.length + ' of ' + allRows.length + ' item(s)' + (lowOnly ? ' (below par)' : '');
-
+  document.getElementById('count').textContent = filtered.length + ' of ' + allRows.length + ' item(s)' +
+    (lowOnly ? ' (below par)' : '') + (unreviewedOnly ? ' (not yet reviewed)' : '');
+  updateReviewProgress();
   updateOrderBar();
+}
+
+function collapseAllGroups(){
+  Object.keys(groupByAnalyzer(allRows)).forEach(function(n){ collapsedGroups.add(n); });
+  render();
+}
+
+function expandAllGroups(){
+  collapsedGroups.clear();
+  render();
+}
+
+function startNewCount(){
+  if(!confirm('Clear "Reviewed" status on all ' + allRows.length + ' items to start a fresh count? Stock counts and par levels are not affected.')) return;
+  fetch('/api/inventory?action=reset-review', { method: 'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res.error){ alert('Reset failed: ' + res.error); return; }
+      allRows.forEach(function(r){ r.last_reviewed_at = null; });
+      render();
+      renderParView();
+    })
+    .catch(function(err){ alert('Reset failed: ' + err.message); });
 }
 
 function updateOrderBar(){
@@ -436,6 +534,57 @@ function refreshRowStatus(catalogId){
   if(!low && document.getElementById('lowStockOnly').checked) tr.remove();
 }
 
+/* ---------- Reviewed tracking ---------- */
+
+function renderReviewedCell(catalogId, lastReviewedAt){
+  const reviewed = !!lastReviewedAt;
+  return '<button type="button" class="review-pill' + (reviewed ? ' reviewed' : '') + '" ' +
+    'onclick="toggleReviewed(' + catalogId + ', this)" ' +
+    'title="' + (reviewed ? ('Reviewed ' + fmtDate(lastReviewedAt)) : 'Tap to mark reviewed') + '">' +
+    (reviewed ? '\u2713 Reviewed' : 'Mark reviewed') +
+  '</button>';
+}
+
+function toggleReviewed(catalogId, btnEl){
+  const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
+  if(!row) return;
+  const newValue = row.last_reviewed_at ? null : new Date().toISOString();
+  btnEl.disabled = true;
+  fetch('/api/inventory', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    btnEl.disabled = false;
+    if(res.error){ alert('Save failed: ' + res.error); return; }
+    row.last_reviewed_at = newValue;
+    const reviewed = !!newValue;
+    btnEl.classList.toggle('reviewed', reviewed);
+    btnEl.textContent = reviewed ? '\u2713 Reviewed' : 'Mark reviewed';
+    btnEl.title = reviewed ? ('Reviewed ' + fmtDate(newValue)) : 'Tap to mark reviewed';
+    updateReviewProgress();
+    // If "show only not yet reviewed" is active and this item just became
+    // reviewed, drop it from view without a full re-render of the rest.
+    if(reviewed && document.getElementById('unreviewedOnly').checked){
+      const tr = btnEl.closest('tr');
+      if(tr) tr.remove();
+    }
+  })
+  .catch(function(err){
+    btnEl.disabled = false;
+    alert('Save failed: ' + err.message);
+  });
+}
+
+function updateReviewProgress(){
+  const el = document.getElementById('reviewProgress');
+  if(!el || allRows.length === 0) return;
+  const reviewedCount = allRows.filter(function(r){ return !!r.last_reviewed_at; }).length;
+  el.textContent = reviewedCount + ' of ' + allRows.length + ' reviewed';
+}
+
 // Prevent the classic accidental-scroll-changes-the-number bug: blur a
 // focused stepper input on wheel instead of letting the browser mutate it.
 document.addEventListener('wheel', function(e){
@@ -468,16 +617,41 @@ function renderParView(){
     if(!filterText) return true;
     return (r.analyzer + ' ' + r.item).toLowerCase().indexOf(filterText) !== -1;
   });
-  const sorted = sortRows(filtered.slice());
-  document.getElementById('parBody').innerHTML = sorted.map(function(r){
-    return '<tr>' +
-      '<td>' + escapeHtml(r.analyzer) + '</td>' +
-      '<td>' + escapeHtml(r.category) + '</td>' +
-      '<td>' + escapeHtml(r.item) + '</td>' +
-      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
-      '<td>' + renderStepper(r.catalog_id, 'par_level', r.par_level == null ? 0 : r.par_level) + '</td>' +
+  const groups = groupByAnalyzer(filtered);
+  const groupNames = Object.keys(groups).sort(function(a, b){ return a.localeCompare(b); });
+
+  let html = '';
+  groupNames.forEach(function(name){
+    const rows = sortRows(groups[name]);
+    const collapsed = collapsedParGroups.has(name);
+    html += '<tr class="group-header" data-group="' + escapeHtml(name) + '">' +
+      '<td colspan="4">' +
+        '<span class="group-chevron">' + (collapsed ? '\u25B8' : '\u25BE') + '</span>' +
+        '<span class="group-name">' + escapeHtml(name) + '</span>' +
+        '<span class="group-meta">' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + '</span>' +
+      '</td>' +
     '</tr>';
-  }).join('');
+    if(!collapsed){
+      html += rows.map(function(r){
+        return '<tr>' +
+          '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
+          '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
+          '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
+          '<td data-label="Par level">' + renderStepper(r.catalog_id, 'par_level', r.par_level == null ? 0 : r.par_level) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  });
+
+  const body = document.getElementById('parBody');
+  body.innerHTML = html;
+  body.querySelectorAll('tr.group-header').forEach(function(tr){
+    tr.addEventListener('click', function(){
+      const name = tr.getAttribute('data-group');
+      if(collapsedParGroups.has(name)) collapsedParGroups.delete(name); else collapsedParGroups.add(name);
+      renderParView();
+    });
+  });
 }
 
 function loadHistory(){
@@ -492,11 +666,10 @@ function loadHistory(){
     document.getElementById('historyEmpty').style.display = 'none';
     body.innerHTML = data.map(function(o){
       const itemCount = (o.items || []).length;
-      const sentLabel = o.sent_at ? (escapeHtml(o.sent_to||'') + ' \u2014 ' + fmtDate(o.sent_at)) : '<span class="small">Not sent</span>';
-      return '<tr><td>' + fmtDate(o.created_at) + '</td><td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
-        '<td class="small">' + escapeHtml(o.notes || '--') + '</td>' +
-        '<td class="small">' + escapeHtml(o.sent_to || '--') + '</td>' +
-        '<td class="small">' + (o.sent_at ? fmtDate(o.sent_at) : '--') + '</td></tr>';
+      return '<tr><td data-label="Date">' + fmtDate(o.created_at) + '</td><td data-label="Items">' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
+        '<td class="small" data-label="Notes">' + escapeHtml(o.notes || '--') + '</td>' +
+        '<td class="small" data-label="Sent To">' + escapeHtml(o.sent_to || '--') + '</td>' +
+        '<td class="small" data-label="Sent At">' + (o.sent_at ? fmtDate(o.sent_at) : '--') + '</td></tr>';
     }).join('');
   });
 }
@@ -519,7 +692,14 @@ document.querySelectorAll('.tab').forEach(function(tab){
 document.getElementById('parSearch').addEventListener('input', renderParView);
 
 document.getElementById('search').addEventListener('input', render);
-document.getElementById('lowStockOnly').addEventListener('change', render);
+document.getElementById('lowStockOnly').addEventListener('change', function(){
+  if(this.checked) collapsedGroups.clear();
+  render();
+});
+document.getElementById('unreviewedOnly').addEventListener('change', function(){
+  if(this.checked) collapsedGroups.clear();
+  render();
+});
 
 /* ---------- Order modal ---------- */
 
