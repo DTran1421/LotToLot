@@ -34,8 +34,21 @@
   tr.low-stock td{background:#fcebea;}
   tr.low-stock:hover td{background:#f9dcda;}
   .small{font-size:12px;color:var(--muted);}
-  .stock-input{width:64px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;text-align:right;}
-  .stock-input.dirty{border-color:var(--navy);background:#eef4fb;}
+  .stepper{display:inline-flex;align-items:center;gap:4px;}
+  .stepper-btn{width:26px;height:26px;border:1px solid var(--line);background:#fff;border-radius:6px;font-size:15px;font-weight:700;color:var(--navy);cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;-webkit-tap-highlight-color:transparent;}
+  .stepper-btn:hover{background:var(--neutral-bg);}
+  .stepper-btn:active{background:#dde6ee;}
+  .stepper-input{width:50px;height:26px;padding:0 4px;border:1px solid var(--line);border-radius:6px;font-size:13px;text-align:center;font-weight:600;-moz-appearance:textfield;}
+  .stepper-input::-webkit-inner-spin-button,.stepper-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+  .save-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;opacity:0;transition:opacity .25s;}
+  .save-dot.pending{opacity:1;background:var(--muted);animation:save-pulse 0.9s infinite;}
+  .save-dot.saved{opacity:1;background:var(--good);}
+  .save-dot.err{opacity:1;background:var(--bad);}
+  @keyframes save-pulse{0%,100%{opacity:.25;}50%{opacity:1;}}
+  @media (max-width:780px){
+    .stepper-btn{width:38px;height:38px;font-size:19px;}
+    .stepper-input{width:48px;height:38px;font-size:15px;}
+  }
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
   .pill.ok{background:var(--good-bg);color:var(--good);}
   .pill.low{background:var(--bad-bg);color:var(--bad);}
@@ -281,9 +294,9 @@ function render(){
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
       '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
-      '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.in_stock == null ? 0 : r.in_stock) + '" onchange="updateField(' + r.catalog_id + ', \'in_stock\', this.value, this)"></td>' +
+      '<td>' + renderStepper(r.catalog_id, 'in_stock', r.in_stock == null ? 0 : r.in_stock) + '</td>' +
       '<td class="small" style="text-align:right;padding-right:14px;">' + (r.par_level == null ? 0 : r.par_level) + '</td>' +
-      '<td>' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
+      '<td class="status-cell">' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
       '<td class="small">' + r.order_frequency + ' order' + (r.order_frequency === 1 ? '' : 's') + '</td>' +
       '<td class="small">' + fmtDate(r.last_ordered_at) + '</td>' +
     '</tr>';
@@ -321,36 +334,114 @@ function clearSelection(){
   render();
 }
 
-/* ---------- Inline stock/par editing ---------- */
+/* ---------- Inline stock/par editing (stepper + debounced autosave) ---------- */
 
-function updateField(catalogId, field, value, inputEl){
-  const numValue = value === '' ? 0 : Number(value);
-  inputEl.classList.add('dirty');
+var pendingTimers = {}; // "catalogId:field" -> timeout handle
+
+function renderStepper(catalogId, field, value){
+  return '<span class="stepper">' +
+    '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',-1,this)" aria-label="Decrease">&minus;</button>' +
+    '<input class="stepper-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="' + value + '" ' +
+      'oninput="stepperInputChanged(' + catalogId + ',\'' + field + '\',this)" ' +
+      'onblur="stepperFlush(' + catalogId + ',\'' + field + '\',this)" ' +
+      'onkeydown="if(event.key===\'Enter\'){this.blur();}">' +
+    '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
+    '<span class="save-dot"></span>' +
+  '</span>';
+}
+
+function stepperStep(catalogId, field, delta, btnEl){
+  const container = btnEl.closest('.stepper');
+  const input = container.querySelector('.stepper-input');
+  const current = input.value === '' ? 0 : Number(input.value);
+  const next = Math.max(0, current + delta);
+  input.value = next;
+  scheduleSave(catalogId, field, next, container);
+}
+
+function stepperInputChanged(catalogId, field, inputEl){
+  const container = inputEl.closest('.stepper');
+  const value = inputEl.value === '' ? 0 : Number(inputEl.value);
+  scheduleSave(catalogId, field, value, container);
+}
+
+function stepperFlush(catalogId, field, inputEl){
+  const container = inputEl.closest('.stepper');
+  const value = inputEl.value === '' ? 0 : Number(inputEl.value);
+  const key = catalogId + ':' + field;
+  if(pendingTimers[key]){ clearTimeout(pendingTimers[key]); delete pendingTimers[key]; }
+  saveField(catalogId, field, value, container);
+}
+
+function scheduleSave(catalogId, field, value, containerEl){
+  const key = catalogId + ':' + field;
+  if(pendingTimers[key]) clearTimeout(pendingTimers[key]);
+  setDotState(containerEl, 'pending');
+  pendingTimers[key] = setTimeout(function(){
+    delete pendingTimers[key];
+    saveField(catalogId, field, value, containerEl);
+  }, 500);
+}
+
+function setDotState(containerEl, state){
+  const dot = containerEl.querySelector('.save-dot');
+  if(!dot) return;
+  dot.classList.remove('pending', 'saved', 'err');
+  if(state) dot.classList.add(state);
+}
+
+function saveField(catalogId, field, value, containerEl){
+  setDotState(containerEl, 'pending');
   fetch('/api/inventory', {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ catalog_id: catalogId, [field]: numValue })
+    body: JSON.stringify({ catalog_id: catalogId, [field]: value })
   })
   .then(function(r){ return r.json(); })
   .then(function(res){
-    if(res.error){ alert('Save failed: ' + res.error); return; }
+    if(res.error){ setDotState(containerEl, 'err'); alert('Save failed: ' + res.error); return; }
     const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
     if(row){
-      row[field] = numValue;
+      row[field] = value;
       if(field === 'in_stock') row.last_stock_update_at = new Date().toISOString();
       if(selected[catalogId]) selected[catalogId].row = row;
     }
-    inputEl.classList.remove('dirty');
-    // Re-render both views so the LOW/OK badge, row highlight, and the Par
-    // Levels tab all reflect the new value regardless of which tab is active.
-    render();
-    renderParView();
+    setDotState(containerEl, 'saved');
+    setTimeout(function(){ setDotState(containerEl, null); }, 1100);
+    // Targeted update only -- no full table rebuild, so it doesn't yank focus
+    // away from any other row you're still mid-edit on. Status depends on
+    // both fields, so refresh it regardless of which one just saved.
+    refreshRowStatus(catalogId);
+    document.getElementById('count').textContent =
+      document.querySelectorAll('#tableBody tr').length + ' of ' + allRows.length + ' item(s)' +
+      (document.getElementById('lowStockOnly').checked ? ' (below par)' : '');
   })
   .catch(function(err){
+    setDotState(containerEl, 'err');
     alert('Save failed: ' + err.message);
-    inputEl.classList.remove('dirty');
   });
 }
+
+function refreshRowStatus(catalogId){
+  const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
+  if(!row) return;
+  const tr = document.querySelector('#tableBody tr[data-id="' + catalogId + '"]');
+  if(!tr) return;
+  const low = isLowStock(row);
+  tr.classList.toggle('low-stock', low);
+  const statusCell = tr.querySelector('.status-cell');
+  if(statusCell) statusCell.innerHTML = low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>';
+  // If "show only items below par" is on and this item just crossed back
+  // above par, drop it out of view without a full re-render of the rest.
+  if(!low && document.getElementById('lowStockOnly').checked) tr.remove();
+}
+
+// Prevent the classic accidental-scroll-changes-the-number bug: blur a
+// focused stepper input on wheel instead of letting the browser mutate it.
+document.addEventListener('wheel', function(e){
+  const active = document.activeElement;
+  if(active && active.classList && active.classList.contains('stepper-input')) active.blur();
+}, { passive: true });
 
 /* ---------- Load ---------- */
 
@@ -384,7 +475,7 @@ function renderParView(){
       '<td>' + escapeHtml(r.category) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
-      '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.par_level == null ? 0 : r.par_level) + '" onchange="updateField(' + r.catalog_id + ', \'par_level\', this.value, this)"></td>' +
+      '<td>' + renderStepper(r.catalog_id, 'par_level', r.par_level == null ? 0 : r.par_level) + '</td>' +
     '</tr>';
   }).join('');
 }
