@@ -168,9 +168,10 @@ var SORT_COLUMNS = [
 ];
 var TIE_BREAK_COLUMNS = ['analyzer', 'category', 'item'];
 
-function mckessonLink(ref){
+function mckessonLink(ref, url){
   if(!ref) return '--';
-  return '<a href="https://mms.mckesson.com/catalog?query=' + encodeURIComponent(ref) + '" target="_blank" rel="noopener" class="mck-link">' + escapeHtml(ref) + '</a>';
+  const target = url || ('https://mms.mckesson.com/catalog?query=' + encodeURIComponent(ref));
+  return '<a href="' + target + '" target="_blank" rel="noopener" class="mck-link">' + escapeHtml(ref) + '</a>';
 }
 
 function escapeHtml(s){
@@ -278,7 +279,7 @@ function render(){
       '<td>' + escapeHtml(r.category) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + mckessonLink(r.mckesson_ref) + '</td>' +
+      '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td><input class="stock-input" type="number" min="0" step="1" value="' + (r.in_stock == null ? 0 : r.in_stock) + '" onchange="updateField(' + r.catalog_id + ', \'in_stock\', this.value, this)"></td>' +
       '<td class="small" style="text-align:right;padding-right:14px;">' + (r.par_level == null ? 0 : r.par_level) + '</td>' +
@@ -441,7 +442,7 @@ function openOrderModal(){
       '<td>' + escapeHtml(r.analyzer) + '</td>' +
       '<td>' + escapeHtml(r.item) + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + mckessonLink(r.mckesson_ref) + '</td>' +
+      '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
       '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value)"></td>' +
