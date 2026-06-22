@@ -68,6 +68,9 @@ module.exports = async (req, res) => {
       if (in_stock !== undefined) {
         update.in_stock = in_stock;
         update.last_stock_update_at = new Date().toISOString();
+        // Changing the count is itself proof you looked at the item, so
+        // auto-mark it reviewed -- no need to also tap "Mark reviewed".
+        update.last_reviewed_at = new Date().toISOString();
       }
       if (par_level !== undefined) {
         update.par_level = par_level;

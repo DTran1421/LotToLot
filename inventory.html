@@ -500,16 +500,20 @@ function saveField(catalogId, field, value, containerEl){
     if(res.error){ setDotState(containerEl, 'err'); alert('Save failed: ' + res.error); return; }
     const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
     if(row){
-      row[field] = value;
-      if(field === 'in_stock') row.last_stock_update_at = new Date().toISOString();
+      // Sync the whole server response rather than just the one field --
+      // updating in_stock also auto-stamps last_reviewed_at server-side
+      // (changing the count is itself proof you checked the item), so this
+      // picks that up too without a second round-trip.
+      Object.assign(row, res);
       if(selected[catalogId]) selected[catalogId].row = row;
     }
     setDotState(containerEl, 'saved');
     setTimeout(function(){ setDotState(containerEl, null); }, 1100);
-    // Targeted update only -- no full table rebuild, so it doesn't yank focus
-    // away from any other row you're still mid-edit on. Status depends on
-    // both fields, so refresh it regardless of which one just saved.
+    // Targeted updates only -- no full table rebuild, so it doesn't yank
+    // focus away from any other row you're still mid-edit on.
     refreshRowStatus(catalogId);
+    refreshReviewedCell(catalogId);
+    updateReviewProgress();
     document.getElementById('count').textContent =
       document.querySelectorAll('#tableBody tr').length + ' of ' + allRows.length + ' item(s)' +
       (document.getElementById('lowStockOnly').checked ? ' (below par)' : '');
@@ -543,6 +547,22 @@ function renderReviewedCell(catalogId, lastReviewedAt){
     'title="' + (reviewed ? ('Reviewed ' + fmtDate(lastReviewedAt)) : 'Tap to mark reviewed') + '">' +
     (reviewed ? '\u2713 Reviewed' : 'Mark reviewed') +
   '</button>';
+}
+
+function refreshReviewedCell(catalogId){
+  const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
+  if(!row) return;
+  const tr = document.querySelector('#tableBody tr[data-id="' + catalogId + '"]');
+  if(!tr) return;
+  const btn = tr.querySelector('.review-pill');
+  if(!btn) return;
+  const reviewed = !!row.last_reviewed_at;
+  btn.classList.toggle('reviewed', reviewed);
+  btn.textContent = reviewed ? '\u2713 Reviewed' : 'Mark reviewed';
+  btn.title = reviewed ? ('Reviewed ' + fmtDate(row.last_reviewed_at)) : 'Tap to mark reviewed';
+  // If "show only not yet reviewed" is active and this item just got
+  // auto-reviewed by a stock count change, drop it from view immediately.
+  if(reviewed && document.getElementById('unreviewedOnly').checked) tr.remove();
 }
 
 function toggleReviewed(catalogId, btnEl){
