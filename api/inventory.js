@@ -1,4 +1,5 @@
 const supabase = require('./_supabase');
+const nodemailer = require('nodemailer');
 
 /**
  * Single consolidated endpoint for everything on the Inventory page.
@@ -10,7 +11,7 @@ const supabase = require('./_supabase');
  * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
  * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump)
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
- * POST /api/inventory?action=send-email     -> email a generated order PDF via Resend
+ * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
  */
 module.exports = async (req, res) => {
@@ -145,35 +146,31 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: 'orderId, to, pdfBase64, and filename are required' });
       }
 
-      if (!process.env.RESEND_API_KEY) {
+      if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
         return res.status(500).json({
-          error: 'RESEND_API_KEY is not set. Add it (and RESEND_FROM_EMAIL, on a domain verified with Resend) in the Vercel project\u2019s environment variables before auto-send will work. You can still download the PDF and send it manually in the meantime.',
+          error: 'GMAIL_USER and/or GMAIL_APP_PASSWORD are not set. Add both in the Vercel project\u2019s environment variables before auto-send will work (GMAIL_USER is the full Gmail address, GMAIL_APP_PASSWORD is a 16-character App Password generated from that Google account -- not its regular login password). You can still download the PDF and send it manually in the meantime.',
         });
       }
 
-      const fromAddress = process.env.RESEND_FROM_EMAIL || 'orders@resend.dev';
-
-      const emailBody = {
-        from: fromAddress,
-        to: [to],
-        subject: subject || 'Altru Diagnostics Order',
-        text: (notes && notes.trim() ? notes.trim() + '\n\n' : '') + 'Please find the attached inventory order report.\n\n- Sent from the Altru Diagnostics Lot Tracking app',
-        attachments: [{ filename, content: pdfBase64 }],
-      };
-      if (cc && cc.trim()) emailBody.cc = [cc.trim()];
-
-      const resendRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + process.env.RESEND_API_KEY,
-          'Content-Type': 'application/json',
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.GMAIL_USER,
+          pass: process.env.GMAIL_APP_PASSWORD,
         },
-        body: JSON.stringify(emailBody),
       });
 
-      if (!resendRes.ok) {
-        const errText = await resendRes.text();
-        throw new Error('Resend API error: ' + errText);
+      try {
+        await transporter.sendMail({
+          from: 'Altru Diagnostics Lot Tracking <' + process.env.GMAIL_USER + '>',
+          to: to,
+          cc: cc && cc.trim() ? cc.trim() : undefined,
+          subject: subject || 'Altru Diagnostics Order',
+          text: (notes && notes.trim() ? notes.trim() + '\n\n' : '') + 'Please find the attached inventory order report.\n\n- Sent from the Altru Diagnostics Lot Tracking app',
+          attachments: [{ filename, content: pdfBase64, encoding: 'base64' }],
+        });
+      } catch (mailErr) {
+        throw new Error('Gmail SMTP error: ' + mailErr.message);
       }
 
       const sentAt = new Date().toISOString();
