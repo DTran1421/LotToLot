@@ -426,7 +426,7 @@ function toggleSelect(catalogId, checked){
   if(checked){
     const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
     if(row){
-      const suggestedQty = Math.max(0, Number(row.par_level || 0) - Number(row.in_stock || 0));
+      const suggestedQty = Number(row.par_level || 0);
       selected[catalogId] = { row: row, qty: suggestedQty || 1 };
     }
   } else {
@@ -593,7 +593,7 @@ function refreshRowStatus(catalogId){
   tr.classList.toggle('low-stock', shouldOrder);
   const isSelected = !!selected[catalogId];
   if(shouldOrder && !isSelected){
-    const qty = Math.max(0, Number(row.par_level || 0) - Number(row.in_stock || 0));
+    const qty = Number(row.par_level || 0);
     selected[catalogId] = { row: row, qty: qty || 1 };
   } else if(!shouldOrder && isSelected){
     delete selected[catalogId];
@@ -691,7 +691,7 @@ function load(){
     selected = {};
     allRows.forEach(function(r){
       if(shouldAutoOrder(r)){
-        const qty = Math.max(0, Number(r.par_level || 0) - Number(r.in_stock || 0));
+        const qty = Number(r.par_level || 0);
         selected[r.catalog_id] = { row: r, qty: qty || 1 };
       }
     });
@@ -810,7 +810,7 @@ function refreshAndOpenOrderModal(btn){
     allRows.forEach(function(r){
       const isSelected = !!selected[r.catalog_id];
       if(shouldAutoOrder(r) && !isSelected){
-        const qty = Math.max(0, Number(r.par_level || 0) - Number(r.in_stock || 0));
+        const qty = Number(r.par_level || 0);
         selected[r.catalog_id] = { row: r, qty: qty || 1 };
       } else if(isSelected){
         selected[r.catalog_id].row = r;
@@ -888,7 +888,7 @@ function closeOrderModal(){
 
 function renderPdfBlob(items, notes){
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const margin = 40;
   const pageWidth = doc.internal.pageSize.getWidth();
   const now = new Date();
@@ -905,10 +905,10 @@ function renderPdfBlob(items, notes){
   doc.setTextColor(0, 0, 0);
 
   doc.autoTable({
-    head: [['Instrument', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']],
+    head: [['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']],
     body: items.map(function(it){
       return [
-        it.analyzer || '--',
+        it.category || '--',
         it.item || '--',
         it.manufacturer_ref || '--',
         it.mckesson_ref || '--',
@@ -918,9 +918,14 @@ function renderPdfBlob(items, notes){
     }),
     startY: 76,
     margin: { left: margin, right: margin },
-    styles: { fontSize: 9, cellPadding: 6, overflow: 'linebreak', valign: 'middle' },
-    headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    columnStyles: { 5: { halign: 'right', cellWidth: 50 } },
+    styles: { fontSize: 8.5, cellPadding: 5, overflow: 'linebreak', valign: 'middle' },
+    headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+    columnStyles: {
+      0: { cellWidth: 62 },
+      2: { cellWidth: 58 },
+      3: { cellWidth: 62 },
+      5: { halign: 'right', cellWidth: 32 }
+    },
     tableWidth: 'auto'
   });
 
@@ -946,9 +951,9 @@ function copyTableForSpreadsheet(){
   // Real tab characters between columns -- this is what a PDF copy/paste
   // can't give you, since PDFs have no embedded column delimiters. Pasting
   // tab-separated text into Excel/Sheets splits it into cells correctly.
-  const header = ['Instrument', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
+  const header = ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
   const rows = items.map(function(it){
-    return [it.analyzer || '', it.item || '', it.manufacturer_ref || '', it.mckesson_ref || '', it.pack_size || '', it.qty].join('\t');
+    return [it.category || '', it.item || '', it.manufacturer_ref || '', it.mckesson_ref || '', it.pack_size || '', it.qty].join('\t');
   });
   const tsv = header + '\n' + rows.join('\n');
   navigator.clipboard.writeText(tsv).then(function(){
