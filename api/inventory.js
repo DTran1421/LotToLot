@@ -9,7 +9,7 @@ const nodemailer = require('nodemailer');
  *
  * GET  /api/inventory                       -> list inventory joined with catalog + order frequency
  * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
- * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump)
+ * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump), optionally save the generated PDF to Storage and set orders.pdf_url
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
@@ -102,7 +102,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST' && action === 'create-order') {
-      const { items, notes } = req.body;
+      const { items, notes, pdfBase64, filename } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items is required and must be a non-empty array' });
       }
@@ -113,6 +113,32 @@ module.exports = async (req, res) => {
         .select();
       if (orderErr) throw orderErr;
       const order = orderRows[0];
+
+      // The "reports" Storage bucket already exists (public) but was never
+      // actually wired up -- every past order has pdf_url: null. Save the
+      // literal generated PDF here so Order History can link to the exact
+      // file that was produced/sent, not a regeneration from the stored
+      // items/notes (which could drift if catalog data changes later).
+      if (pdfBase64) {
+        const path = 'order_' + order.id + '.pdf';
+        const { error: uploadErr } = await supabase.storage
+          .from('reports')
+          .upload(path, Buffer.from(pdfBase64, 'base64'), { contentType: 'application/pdf', upsert: true });
+        if (uploadErr) {
+          // Don't fail the whole order over a storage hiccup -- the order
+          // itself (items/notes/inventory bump) still matters more than
+          // the saved copy. pdf_url just stays null for this one.
+          console.error('PDF upload failed for order', order.id, uploadErr.message);
+        } else {
+          const { data: urlData } = supabase.storage.from('reports').getPublicUrl(path);
+          const { error: pdfUrlErr } = await supabase
+            .from('orders')
+            .update({ pdf_url: urlData.publicUrl })
+            .eq('id', order.id);
+          if (pdfUrlErr) throw pdfUrlErr;
+          order.pdf_url = urlData.publicUrl;
+        }
+      }
 
       const now = new Date().toISOString();
       const logRows = items.map((it) => ({ catalog_id: it.catalog_id, order_id: order.id, ordered_at: now }));

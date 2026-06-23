@@ -164,7 +164,7 @@
     </div>
     <div class="table-scroll">
       <table class="responsive">
-        <thead><tr><th>Date</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th></tr></thead>
+        <thead><tr><th>Date</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
       <div class="small" id="historyEmpty" style="display:none;padding:20px 0;text-align:center;">No orders generated yet.</div>
@@ -757,7 +757,8 @@ function loadHistory(){
       return '<tr><td data-label="Date">' + fmtDate(o.created_at) + '</td><td data-label="Items">' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
         '<td class="small" data-label="Notes">' + escapeHtml(o.notes || '--') + '</td>' +
         '<td class="small" data-label="Sent To">' + escapeHtml(o.sent_to || '--') + '</td>' +
-        '<td class="small" data-label="Sent At">' + (o.sent_at ? fmtDate(o.sent_at) : '--') + '</td></tr>';
+        '<td class="small" data-label="Sent At">' + (o.sent_at ? fmtDate(o.sent_at) : '--') + '</td>' +
+        '<td class="small" data-label="PDF">' + (o.pdf_url ? '<a href="' + escapeHtml(o.pdf_url) + '" target="_blank" rel="noopener">View PDF</a>' : '--') + '</td></tr>';
     }).join('');
   });
 }
@@ -987,11 +988,11 @@ function setStatus(msg, cls){
   el.className = 'status-msg' + (cls ? ' ' + cls : '');
 }
 
-function createOrderRecord(items, notes){
+function createOrderRecord(items, notes, pdfBase64, filename){
   return fetch('/api/inventory?action=create-order', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ items: items, notes: notes })
+    body: JSON.stringify({ items: items, notes: notes, pdfBase64: pdfBase64, filename: filename })
   }).then(function(r){ return r.json(); }).then(function(res){
     if(res.error) throw new Error(res.error);
     return res;
@@ -1010,20 +1011,25 @@ function blobToBase64(blob){
 function generateAndDownload(){
   const items = buildItemsPayload();
   const notes = document.getElementById('orderNotes').value;
-  setStatus('Saving order record...');
+  setStatus('Generating PDF...');
   document.getElementById('downloadBtn').disabled = true;
   document.getElementById('sendBtn').disabled = true;
 
-  createOrderRecord(items, notes)
-    .then(function(){
-      setStatus('Generating PDF...');
-      return renderPdfBlob(items, notes);
-    })
+  let pdfResult;
+  renderPdfBlob(items, notes)
     .then(function(result){
-      const url = URL.createObjectURL(result.blob);
+      pdfResult = result;
+      return blobToBase64(result.blob);
+    })
+    .then(function(base64){
+      setStatus('Saving order record...');
+      return createOrderRecord(items, notes, base64, pdfResult.filename);
+    })
+    .then(function(){
+      const url = URL.createObjectURL(pdfResult.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = result.filename;
+      a.download = pdfResult.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1046,24 +1052,25 @@ function generateAndSend(){
   const cc = document.getElementById('emailCc').value.trim();
   if(!to){ setStatus('Enter a "Send to" address first.', 'err'); return; }
 
-  setStatus('Saving order record...');
+  setStatus('Generating PDF...');
   document.getElementById('downloadBtn').disabled = true;
   document.getElementById('sendBtn').disabled = true;
 
-  let orderId;
-  createOrderRecord(items, notes)
-    .then(function(order){
-      orderId = order.id;
-      setStatus('Generating PDF...');
-      return renderPdfBlob(items, notes);
-    })
+  let orderId, pdfFilename;
+  renderPdfBlob(items, notes)
     .then(function(result){
+      pdfFilename = result.filename;
       setStatus('Encoding PDF...');
-      return blobToBase64(result.blob).then(function(base64){
-        return { base64: base64, filename: result.filename };
+      return blobToBase64(result.blob);
+    })
+    .then(function(base64){
+      setStatus('Saving order record...');
+      return createOrderRecord(items, notes, base64, pdfFilename).then(function(order){
+        orderId = order.id;
+        return base64;
       });
     })
-    .then(function(encoded){
+    .then(function(base64){
       setStatus('Sending email...');
       return fetch('/api/inventory?action=send-email', {
         method: 'POST',
@@ -1074,8 +1081,8 @@ function generateAndSend(){
           cc: cc,
           subject: 'Altru Diagnostics Order ' + new Date().toLocaleDateString(),
           notes: notes,
-          pdfBase64: encoded.base64,
-          filename: encoded.filename
+          pdfBase64: base64,
+          filename: pdfFilename
         })
       });
     })
