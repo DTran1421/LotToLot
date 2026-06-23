@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lot Tracking - Inventory</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--warn:#a86c00;--warn-bg:#fff7e6;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
@@ -102,14 +103,6 @@
   .history-row{cursor:pointer;}
   .mck-link{color:var(--navy);text-decoration:underline;}
   .history-detail{font-size:12px;color:var(--muted);padding:0 8px 10px 8px;}
-  #pdf-render-target{width:980px;}
-  .pdf-doc{font-family:Inter,Arial,sans-serif;color:#172a3a;padding:20px;}
-  .pdf-doc h1{font-size:18px;margin:0 0 4px;}
-  .pdf-doc .meta{font-size:12px;color:#5f7385;margin-bottom:14px;}
-  .pdf-doc table{width:100%;border-collapse:collapse;font-size:12px;}
-  .pdf-doc th,.pdf-doc td{border:1px solid #dbe2e8;padding:6px 8px;text-align:left;}
-  .pdf-doc th{background:#eef2f6;text-transform:uppercase;font-size:10px;color:#5f7385;}
-  .pdf-doc .notes-box{margin-top:16px;padding:10px 12px;border:1px solid #dbe2e8;border-radius:6px;background:#fafbfc;font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -182,7 +175,6 @@
 </div>
 
 <div id="modalRoot"></div>
-<div id="pdf-render-target"></div>
 
 <script>
 var SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
@@ -775,24 +767,67 @@ function closeOrderModal(){
   document.getElementById('modalRoot').innerHTML = '';
 }
 
-/* ---------- PDF generation ---------- */
+/* ---------- PDF generation ----------
+ * Builds a real vector/text PDF via jsPDF + autoTable -- NOT an image of
+ * the page. This is what makes the text selectable/highlightable/
+ * searchable/copyable, and it's also what fixes the right-edge cutoff:
+ * autoTable lays out columns within the page margins itself, so there's
+ * no fixed-pixel-width HTML div that can render wider than the page like
+ * the old html2canvas approach could.
+ */
 
-function buildOrderPdfHtml(items, notes){
+function renderPdfBlob(items, notes){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  const margin = 40;
+  const pageWidth = doc.internal.pageSize.getWidth();
   const now = new Date();
-  const rows = items.map(function(it){
-    return '<tr><td>' + escapeHtml(it.analyzer) + '</td><td>' + escapeHtml(it.item) + '</td>' +
-      '<td>' + escapeHtml(it.manufacturer_ref||'--') + '</td><td>' + escapeHtml(it.mckesson_ref||'--') + '</td>' +
-      '<td>' + escapeHtml(it.pack_size||'--') + '</td>' +
-      '<td style="text-align:right;">' + it.qty + '</td></tr>';
-  }).join('');
-  const notesHtml = notes && notes.trim() ? '<div class="notes-box"><strong>Notes:</strong> ' + escapeHtml(notes.trim()) + '</div>' : '';
-  return '<div class="pdf-doc">' +
-    '<h1>Altru Diagnostics Order Report</h1>' +
-    '<div class="meta">Generated ' + now.toLocaleString() + '</div>' +
-    '<table><thead><tr><th>Instrument</th><th>Item</th><th>Mfr Ref #</th><th>McKesson Ref #</th><th>Pack/Unit Size</th><th style="text-align:right;">Qty</th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table>' +
-    notesHtml +
-    '</div>';
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(17, 43, 71);
+  doc.text('Altru Diagnostics Order Report', margin, 42);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(110, 110, 110);
+  doc.text('Generated ' + now.toLocaleString(), margin, 60);
+  doc.setTextColor(0, 0, 0);
+
+  doc.autoTable({
+    head: [['Instrument', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']],
+    body: items.map(function(it){
+      return [
+        it.analyzer || '--',
+        it.item || '--',
+        it.manufacturer_ref || '--',
+        it.mckesson_ref || '--',
+        it.pack_size || '--',
+        String(it.qty)
+      ];
+    }),
+    startY: 76,
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 9, cellPadding: 6, overflow: 'linebreak', valign: 'middle' },
+    headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    columnStyles: { 5: { halign: 'right', cellWidth: 50 } },
+    tableWidth: 'auto'
+  });
+
+  if(notes && notes.trim()){
+    const finalY = doc.lastAutoTable.finalY + 24;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(17, 43, 71);
+    doc.text('Notes:', margin, finalY);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    const wrapped = doc.splitTextToSize(notes.trim(), pageWidth - margin * 2 - 46);
+    doc.text(wrapped, margin + 46, finalY);
+  }
+
+  const filename = 'order_' + Date.now() + '.pdf';
+  return Promise.resolve({ blob: doc.output('blob'), filename: filename });
 }
 
 function buildItemsPayload(){
@@ -828,14 +863,6 @@ function createOrderRecord(items, notes){
     if(res.error) throw new Error(res.error);
     return res;
   });
-}
-
-function renderPdfBlob(items, notes){
-  const target = document.getElementById('pdf-render-target');
-  target.innerHTML = buildOrderPdfHtml(items, notes);
-  const filename = 'order_' + Date.now() + '.pdf';
-  return html2pdf().set({ filename: filename, margin: 10, html2canvas: { scale: 1, scrollX: 0, scrollY: 0, windowWidth: 980, width: 980 } })
-    .from(target).toPdf().output('blob').then(function(blob){ return { blob: blob, filename: filename }; });
 }
 
 function blobToBase64(blob){
