@@ -66,6 +66,9 @@
   .review-pill:hover{background:var(--neutral-bg);}
   .review-pill.reviewed{background:var(--good-bg);color:var(--good);border-color:var(--good-bg);}
   .review-progress{font-size:12px;color:var(--muted);margin:-4px 0 10px;}
+  .save-status{font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;white-space:nowrap;}
+  .save-status.saved{color:var(--good);background:var(--good-bg);}
+  .save-status.pending{color:var(--navy);background:#eef4fb;}
   @media (max-width:780px){
     table.responsive td.col-mobile-hide{display:none;}
     table.responsive thead{display:none;}
@@ -129,6 +132,7 @@
       <button type="button" class="toolbar-btn" onclick="collapseAllGroups()">Collapse all</button>
       <button type="button" class="toolbar-btn" onclick="expandAllGroups()">Expand all</button>
       <button type="button" class="toolbar-btn" onclick="startNewCount()">Start New Count</button>
+      <span class="save-status" id="saveStatus">All changes saved</span>
       <div class="count" id="count"></div>
     </div>
     <div class="review-progress" id="reviewProgress"></div>
@@ -437,7 +441,30 @@ function clearSelection(){
 
 /* ---------- Inline stock/par editing (stepper + debounced autosave) ---------- */
 
-var pendingTimers = {}; // "catalogId:field" -> timeout handle
+var pendingTimers = {}; // "catalogId:field" -> timeout handle (debounce wait only)
+var unsavedKeys = new Set(); // "catalogId:field" not yet CONFIRMED saved -- covers the debounce wait AND the in-flight request, which is the real window where a closed tab could lose an edit
+
+function updateSaveStatus(){
+  const el = document.getElementById('saveStatus');
+  if(!el) return;
+  if(unsavedKeys.size === 0){
+    el.textContent = 'All changes saved';
+    el.className = 'save-status saved';
+  } else {
+    el.textContent = 'Saving ' + unsavedKeys.size + ' change' + (unsavedKeys.size === 1 ? '' : 's') + '\u2026';
+    el.className = 'save-status pending';
+  }
+}
+
+// Browser-native warning if you try to close/navigate away while something
+// hasn't been confirmed saved yet -- the one real failure mode autosave
+// doesn't already cover (closing the tab inside the ~500ms debounce window).
+window.addEventListener('beforeunload', function(e){
+  if(unsavedKeys.size > 0){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 function renderStepper(catalogId, field, value){
   return '<span class="stepper">' +
@@ -471,6 +498,8 @@ function stepperFlush(catalogId, field, inputEl){
   const value = inputEl.value === '' ? 0 : Number(inputEl.value);
   const key = catalogId + ':' + field;
   if(pendingTimers[key]){ clearTimeout(pendingTimers[key]); delete pendingTimers[key]; }
+  unsavedKeys.add(key);
+  updateSaveStatus();
   saveField(catalogId, field, value, container);
 }
 
@@ -478,6 +507,8 @@ function scheduleSave(catalogId, field, value, containerEl){
   const key = catalogId + ':' + field;
   if(pendingTimers[key]) clearTimeout(pendingTimers[key]);
   setDotState(containerEl, 'pending');
+  unsavedKeys.add(key);
+  updateSaveStatus();
   pendingTimers[key] = setTimeout(function(){
     delete pendingTimers[key];
     saveField(catalogId, field, value, containerEl);
@@ -492,6 +523,9 @@ function setDotState(containerEl, state){
 }
 
 function saveField(catalogId, field, value, containerEl){
+  const key = catalogId + ':' + field;
+  unsavedKeys.add(key); // idempotent -- covers calling saveField directly
+  updateSaveStatus();
   setDotState(containerEl, 'pending');
   fetch('/api/inventory', {
     method: 'PATCH',
@@ -500,7 +534,13 @@ function saveField(catalogId, field, value, containerEl){
   })
   .then(function(r){ return r.json(); })
   .then(function(res){
-    if(res.error){ setDotState(containerEl, 'err'); alert('Save failed: ' + res.error); return; }
+    if(res.error){
+      setDotState(containerEl, 'err');
+      unsavedKeys.delete(key); // the alert below already interrupts the user -- don't also block navigation forever on a failed save with no retry
+      updateSaveStatus();
+      alert('Save failed: ' + res.error);
+      return;
+    }
     const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
     if(row){
       // Sync the whole server response rather than just the one field --
@@ -512,6 +552,8 @@ function saveField(catalogId, field, value, containerEl){
     }
     setDotState(containerEl, 'saved');
     setTimeout(function(){ setDotState(containerEl, null); }, 1100);
+    unsavedKeys.delete(key);
+    updateSaveStatus();
     // Targeted updates only -- no full table rebuild, so it doesn't yank
     // focus away from any other row you're still mid-edit on.
     refreshRowStatus(catalogId);
@@ -523,6 +565,8 @@ function saveField(catalogId, field, value, containerEl){
   })
   .catch(function(err){
     setDotState(containerEl, 'err');
+    unsavedKeys.delete(key);
+    updateSaveStatus();
     alert('Save failed: ' + err.message);
   });
 }
