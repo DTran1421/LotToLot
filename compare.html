@@ -146,6 +146,17 @@
   .footer-link{text-align:center;color:var(--muted);font-size:11.5px;margin-top:30px;}
   .checkbox-row{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);margin-top:6px;}
   .checkbox-row input{width:auto;}
+  .instructions-panel{position:fixed;top:74px;right:18px;width:250px;max-height:calc(100vh - 94px);overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.08);z-index:40;font-size:12px;color:var(--ink);}
+  .instructions-panel h4{margin:0 0 8px;font-size:13px;color:var(--navy);}
+  .instructions-panel ol{margin:0;padding-left:18px;}
+  .instructions-panel li{margin-bottom:8px;line-height:1.4;}
+  .instructions-panel .close-instructions{position:absolute;top:8px;right:10px;background:none;border:none;font-size:16px;color:var(--muted);cursor:pointer;line-height:1;}
+  .instructions-toggle{display:none;position:fixed;bottom:20px;right:20px;width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.2);z-index:40;}
+  @media (max-width:1400px){
+    .instructions-panel{display:none;}
+    .instructions-panel.open{display:block;}
+    .instructions-toggle{display:flex;align-items:center;justify-content:center;}
+  }
   #report{display:none;}
   @media print{
     body{background:#fff;}
@@ -215,6 +226,8 @@ function applyTeaLookup(c){
 // calls to /api/... are same-origin -- no more CORS workarounds needed.
 
 let job = {instrument:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
+
+let instructionsOpen = false;
 let cardIdSeed = 1;
 let analytes = [];
 
@@ -260,6 +273,7 @@ function render(){
   app.innerHTML = `
     <div id="builder">
       ${renderMasthead()}
+      ${renderInstructionsPanel()}
       ${renderJobCard()}
       ${analytes.map(renderAnalyteCard).join('')}
       <div class="no-print" style="text-align:center;margin:18px 0;">
@@ -274,6 +288,24 @@ function render(){
     <div id="report" class="report-page"></div>
   `;
   attachHandlers();
+}
+
+function renderInstructionsPanel(){
+  return `
+    <div class="instructions-panel no-print${instructionsOpen ? ' open' : ''}">
+      <button type="button" class="close-instructions" data-action="toggle-instructions" aria-label="Close instructions">&times;</button>
+      <h4>How to use this page</h4>
+      <ol>
+        <li>Fill in <strong>Job information</strong> first &mdash; instrument, date, reason for the lot change, and who performed it.</li>
+        <li>For each analyte, <strong>TEa</strong> auto-fills from the CLIA default. Only override it if you're using a lab-defined or manufacturer criterion instead.</li>
+        <li>Enter paired old/new lot values either by typing them in directly, or by uploading a printout and letting AI extract &amp; pair them &mdash; always double-check extracted values against the original printout before trusting them.</li>
+        <li>Rows highlighted in red exceeded the allowable difference (TEa) for that analyte &mdash; review those individually.</li>
+        <li>Only set <strong>Category</strong> if this comparison should write a status back to the Reagent Master sheet.</li>
+        <li>Use <strong>+ Add another analyte</strong> for additional analytes on the same job, then <strong>Generate compiled report</strong> once everything's filled in.</li>
+      </ol>
+    </div>
+    <button type="button" class="instructions-toggle no-print" data-action="toggle-instructions" aria-label="Show instructions" title="How to use this page">?</button>
+  `;
 }
 
 function renderMasthead(){
@@ -717,6 +749,7 @@ function onAction(e){
   const cardId = el.dataset.card ? parseInt(el.dataset.card) : null;
 
   if(action==='add-card') addAnalyteCard();
+  else if(action==='toggle-instructions'){ instructionsOpen = !instructionsOpen; render(); }
   else if(action==='remove-card') removeAnalyteCard(cardId);
   else if(action==='set-tab'){ getCard(cardId).activeTab = el.dataset.tab; render(); }
   else if(action==='add-row'){
