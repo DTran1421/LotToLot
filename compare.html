@@ -225,7 +225,7 @@ function applyTeaLookup(c){
 // This page is served from the same Vercel project as the API routes, so
 // calls to /api/... are same-origin -- no more CORS workarounds needed.
 
-let job = {instrument:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
+let job = {instrument:"",serialNumber:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
 
 let instructionsOpen = false;
 let cardIdSeed = 1;
@@ -321,9 +321,10 @@ function renderJobCard(){
     <div class="grid cols-3">
       <div class="field"><label>Instrument</label>
         <select data-job="instrument">
-          ${["","01. DXC","02. DXI","03. DXH","03. SMS","04. DXU","05. Tosoh","06. Clinitek","07. Hemosure","08. Sedimat","09. Waived","11. DXA","Other / waived platform"].map(o=>`<option ${job.instrument===o?'selected':''}>${o}</option>`).join('')}
+          ${["","Beckman Coulter DxC 700 AU","Beckman Coulter DxI 800/9000","Beckman Coulter DxH 900","Beckman Coulter DxU Iris 840m","Beckman Coulter DxA 5000 (Automation Track)","Beckman Coulter SMS II (Slide Maker Stainer)","Tosoh G8","Siemens CLINITEK","Sedimat 15 Plus","Hemosure (Waived FOB Test)","Waived Testing (Various Kits)","Linearity Materials (All Instruments)","General Lab Supplies","Other"].map(o=>`<option ${job.instrument===o?'selected':''}>${o}</option>`).join('')}
         </select>
       </div>
+      <div class="field"><label>Serial number</label><input type="text" data-job="serialNumber" value="${job.serialNumber}" placeholder="Instrument serial #"></div>
       <div class="field"><label>Date performed</label><input type="date" data-job="date" value="${job.date}"></div>
       <div class="field"><label>Reason for lot change</label>
         <select data-job="reason">

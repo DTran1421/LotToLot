@@ -83,6 +83,7 @@ function buildReportContentHtml(job, cards, reviewInfo) {
     '<p style="color:#c9d8e6;">' + (job.instrument || 'Instrument not specified') + ' &middot; ' + (job.date || 'date not specified') + '</p></div>' +
     '<div class="card"><table class="meta-table">' +
     '<tr><td class="k">Instrument</td><td>' + (job.instrument || '--') + '</td></tr>' +
+    '<tr><td class="k">Serial number</td><td>' + (job.serialNumber || '--') + '</td></tr>' +
     '<tr><td class="k">Date performed</td><td>' + (job.date || '--') + '</td></tr>' +
     '<tr><td class="k">Reason for lot change</td><td>' + (job.reason || '--') + '</td></tr>' +
     '<tr><td class="k">Tested by</td><td>' + (job.performedBy || '--') + '</td></tr>' +
