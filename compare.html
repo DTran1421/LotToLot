@@ -567,32 +567,13 @@ async function extractFromFile(id, file){
     c.extractStatus = 'Sending to Claude for extraction...';
     render();
 
-    const contentBlock = isPdf
-      ? { type:'document', source:{type:'base64', media_type:mediaType, data:base64} }
-      : { type:'image', source:{type:'base64', media_type:mediaType, data:base64} };
-
-    const instructions = `This is a clinical lab instrument printout used for a lot-to-lot reagent or calibrator verification study. The printout may contain ONE analyte with a clean table of paired results, OR it may contain MULTIPLE analytes mixed together with many other data points (e.g. a DxI-style results dump).
-
-Extract EVERY individual numeric result you can find that looks like a sample result tied to an analyte, a sample/specimen identifier, and a lot or run identifier/column header. Do not try to guess which lot is "old" vs "new" -- just report the column header / lot label exactly as printed.
-
-Return ONLY raw JSON (no markdown fences, no commentary) in this exact shape:
-{"records":[{"analyte":"<analyte name as printed>","sampleId":"<sample/specimen id as printed>","label":"<column header or lot/run identifier as printed>","value":<numeric value>}]}
-
-If a sample only has one value with no clear pairing column, still include it with whatever label is available. If you genuinely cannot find any tabular numeric data, return {"records":[]}.`;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("/api/tea-lookup", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-6",
-        max_tokens:1000,
-        messages:[{
-          role:"user",
-          content:[ contentBlock, {type:'text', text:instructions} ]
-        }]
-      })
+      body: JSON.stringify({ base64: base64, mediaType: mediaType, isPdf: isPdf })
     });
     const data = await response.json();
+    if(data.error) throw new Error(data.error);
     const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
     const cleaned = textBlocks.replace(/```json|```/g,'').trim();
     let parsed;
