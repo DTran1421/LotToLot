@@ -121,14 +121,26 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
+// Maps every actual stored status string (across log-shipment.js,
+// save-report.js, and approve.js) to a short label + pill color. The
+// underlying value is untouched -- canApprove() and everything else still
+// matches against the real stored text -- this is purely a condensed
+// display. Full original text is still available via the title tooltip.
+var STATUS_DISPLAY = {
+  'N/A - initial lot on file': { label: 'Baseline', cls: 'pending' },
+  'Pending verification': { label: 'Needs comparison', cls: 'review' },
+  'New lot logged (no verification required for this category)': { label: 'New lot', cls: 'pending' },
+  'Same lot - restock only': { label: 'Restock', cls: 'pass' },
+  'Pending Review': { label: 'Awaiting approval', cls: 'review' },
+  'Failed - needs investigation': { label: 'Failed', cls: 'fail' },
+  'Verified': { label: 'Verified', cls: 'verified' },
+};
+
 function formatCell(col, value){
   if(value === null || value === undefined || value === '') return '<span style="color:#bbb;">--</span>';
   if(col === 'status'){
-    let cls = 'pending';
-    if(value === 'Pending Review') cls = 'review';
-    else if(value === 'Failed - needs investigation') cls = 'fail';
-    else if(value === 'Verified') cls = 'verified';
-    return '<span class="pill ' + cls + '">' + escapeHtml(value) + '</span>';
+    var info = STATUS_DISPLAY[value] || { label: value, cls: 'pending' };
+    return '<span class="pill ' + info.cls + '" title="' + escapeHtml(value) + '">' + escapeHtml(info.label) + '</span>';
   }
   if(col === 'pass'){
     return '<span class="pill ' + (value ? 'pass' : 'fail') + '">' + (value ? 'PASS' : 'FAIL') + '</span>';
