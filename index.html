@@ -27,6 +27,17 @@
   .ref-tag{font-size:11.5px;color:var(--muted);margin-top:4px;}
   .footer-link{text-align:center;font-size:11px;color:var(--muted);margin-top:10px;}
   .footer-link a{color:var(--muted);}
+  .mode-toggle{display:flex;gap:8px;margin-bottom:14px;}
+  .mode-btn{flex:1;width:auto;margin-top:0;padding:10px;background:#fff;color:var(--navy);border:1px solid var(--line);font-size:13px;}
+  .mode-btn.active{background:var(--navy);color:#fff;}
+  .upload-btn{display:inline-block;width:100%;text-align:center;padding:13px;background:#fff;color:var(--navy);border:1px solid var(--navy);border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;box-sizing:border-box;}
+  .upload-btn:hover{background:var(--neutral-bg);}
+  .extract-status{font-size:12.5px;color:var(--muted);margin-top:8px;min-height:16px;}
+  .manifest-row{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;background:#fafbfc;}
+  .manifest-row-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .manifest-extracted-text{font-size:12px;color:var(--muted);font-style:italic;flex:1;}
+  .row-remove{width:auto;margin:0;padding:2px 8px;background:none;color:var(--bad);border:1px solid var(--bad);font-size:14px;line-height:1.2;border-radius:6px;}
+  .unmatched-flag{color:var(--bad);text-transform:none;font-weight:700;}
 </style>
 </head>
 <body>
@@ -36,7 +47,12 @@
     <h1>New Shipment Log</h1>
     <p>Log every shipment as it arrives. New lots on Reagents are flagged for lot-to-lot verification automatically; other material types are still logged for traceability.</p>
   </div>
-  <div class="card">
+  <div class="mode-toggle">
+    <button type="button" class="mode-btn active" id="modeSingleBtn" onclick="setMode('single')">Single item</button>
+    <button type="button" class="mode-btn" id="modeManifestBtn" onclick="setMode('manifest')">Upload manifest</button>
+  </div>
+
+  <div class="card" id="singleCard">
     <label>Instrument</label>
     <select id="instrument" onchange="onInstrumentChange()">
       <option value="">-- choose an instrument --</option>
@@ -70,6 +86,22 @@
 
     <button id="submitBtn" onclick="submitForm()">Log shipment</button>
     <div class="result" id="result"></div>
+  </div>
+
+  <div class="card" id="manifestCard" style="display:none;">
+    <label>Shipping manifest / packing slip</label>
+    <p class="ref-tag" style="margin-top:0;">Upload a photo or PDF of the whole manifest -- every line item gets extracted and matched against the catalog at once, instead of one item at a time.</p>
+    <label class="upload-btn" for="manifestFile">Choose file&hellip;</label>
+    <input type="file" id="manifestFile" accept="image/*,.pdf" style="display:none;" onchange="onManifestFileChange()">
+    <p class="extract-status" id="manifestStatus"></p>
+
+    <div id="manifestReview" style="display:none;">
+      <label>Received by (applies to every item below)</label>
+      <input id="manifestReceivedBy" placeholder="Your name">
+      <div id="manifestRows"></div>
+      <button type="button" id="logManifestBtn" onclick="logManifestShipments()">Log shipments</button>
+      <div class="result" id="manifestResult"></div>
+    </div>
   </div>
 </div>
 
@@ -231,6 +263,247 @@
     .catch(function(err){
       btn.disabled = false;
       btn.textContent = 'Log shipment';
+      resultEl.className = 'result show new';
+      resultEl.innerHTML = 'Error: ' + err.message;
+    });
+  }
+
+  /* ---------------------------- Upload manifest mode ---------------------------- */
+
+  function setMode(mode){
+    document.getElementById('singleCard').style.display = mode === 'single' ? 'block' : 'none';
+    document.getElementById('manifestCard').style.display = mode === 'manifest' ? 'block' : 'none';
+    document.getElementById('modeSingleBtn').classList.toggle('active', mode === 'single');
+    document.getElementById('modeManifestBtn').classList.toggle('active', mode === 'manifest');
+  }
+
+  var manifestCatalog = [];
+  var manifestRows = []; // {extracted, matchedCatalogId, lotNumber, quantity, expirationDate}
+
+  function fileToBase64(file){
+    return new Promise(function(resolve, reject){
+      var r = new FileReader();
+      r.onload = function(){ resolve(r.result.split(',')[1]); };
+      r.onerror = function(){ reject(new Error('read failed')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function escapeHtml(s){
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  // Normalizes to lowercase words for comparison -- not a real fuzzy-match
+  // library, just enough to surface a sensible pre-selected guess. The tech
+  // always reviews and can override every match before anything gets logged.
+  function normalizeForMatch(s){
+    return (s||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  }
+
+  function scoreMatch(extracted, row){
+    var ref = normalizeForMatch(extracted.referenceNumber);
+    if(ref){
+      if(row.manufacturer_ref && normalizeForMatch(row.manufacturer_ref) === ref) return 100;
+      if(row.mckesson_ref && normalizeForMatch(row.mckesson_ref) === ref) return 100;
+    }
+    var a = normalizeForMatch(extracted.itemDescription);
+    var b = normalizeForMatch((row.item||'') + ' ' + (row.manufacturer_name||''));
+    if(!a || !b) return 0;
+    var aw = a.split(' ').filter(function(w){ return w.length > 2; });
+    var bwSet = {};
+    b.split(' ').forEach(function(w){ if(w.length > 2) bwSet[w] = true; });
+    var overlap = 0;
+    aw.forEach(function(w){ if(bwSet[w]) overlap++; });
+    return overlap > 0 ? Math.min(80, overlap * 20) : 0;
+  }
+
+  function findBestMatch(extracted, catalog){
+    var best = null, bestScore = 0;
+    catalog.forEach(function(row){
+      var s = scoreMatch(extracted, row);
+      if(s > bestScore){ bestScore = s; best = row; }
+    });
+    return bestScore >= 20 ? best : null;
+  }
+
+  // Only accepts dates the model already gave us in clean ISO form -- if it
+  // printed something else (e.g. "JAN 2027" or "01/27"), leave it blank for
+  // manual entry rather than silently guess a specific day that's wrong.
+  function normalizeDateForInput(d){
+    if(!d) return '';
+    var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? d : '';
+  }
+
+  function onManifestFileChange(){
+    var fileInput = document.getElementById('manifestFile');
+    var file = fileInput.files[0];
+    if(!file) return;
+    var statusEl = document.getElementById('manifestStatus');
+    statusEl.textContent = 'Reading file...';
+    document.getElementById('manifestReview').style.display = 'none';
+
+    fileToBase64(file).then(function(base64){
+      var isPdf = file.type === 'application/pdf';
+      var mediaType = isPdf ? 'application/pdf' : (file.type || 'image/png');
+      statusEl.textContent = 'Extracting line items...';
+      return fetch('/api/log-shipment?action=extract-manifest', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ base64: base64, mediaType: mediaType, isPdf: isPdf })
+      });
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data.error) throw new Error(data.error);
+      var textBlocks = (data.content||[]).filter(function(b){ return b.type==='text'; }).map(function(b){ return b.text; }).join('\n');
+      var cleaned = textBlocks.replace(/```json|```/g,'').trim();
+      var parsed;
+      try{ parsed = JSON.parse(cleaned); }
+      catch(e){ throw new Error('Could not parse AI response as JSON.'); }
+      var items = parsed.items || [];
+      if(items.length === 0){
+        statusEl.textContent = 'No line items found in that file. Try a clearer image, or use Single item entry instead.';
+        return;
+      }
+      statusEl.textContent = 'Matching ' + items.length + ' item(s) against the catalog...';
+      return fetch('/api/catalog').then(function(r){ return r.json(); }).then(function(catalog){
+        manifestCatalog = catalog;
+        manifestRows = items.map(function(it){
+          var match = findBestMatch(it, catalog);
+          return {
+            extracted: it,
+            matchedCatalogId: match ? match.id : '',
+            lotNumber: it.lotNumber || '',
+            quantity: it.quantity != null ? it.quantity : '',
+            expirationDate: normalizeDateForInput(it.expirationDate)
+          };
+        });
+        var unmatched = manifestRows.filter(function(r){ return !r.matchedCatalogId; }).length;
+        statusEl.textContent = 'Extracted ' + items.length + ' item(s)' +
+          (unmatched > 0 ? ' (' + unmatched + ' need a manual match)' : '') +
+          ' -- review below before logging.';
+        renderManifestRows();
+        document.getElementById('manifestReview').style.display = 'block';
+      });
+    })
+    .catch(function(err){
+      statusEl.textContent = 'Extraction failed: ' + err.message;
+    });
+  }
+
+  function buildItemOptionsHtml(selectedId){
+    var groups = {};
+    var order = [];
+    manifestCatalog.forEach(function(row){
+      if(!groups[row.analyzer]){ groups[row.analyzer] = []; order.push(row.analyzer); }
+      groups[row.analyzer].push(row);
+    });
+    order.sort();
+    var html = '<option value="">-- unmatched, choose manually --</option>';
+    order.forEach(function(instrument){
+      html += '<optgroup label="' + escapeHtml(instrument) + '">';
+      groups[instrument].forEach(function(row){
+        html += '<option value="' + row.id + '"' + (String(row.id)===String(selectedId)?' selected':'') + '>' +
+          escapeHtml(row.category) + ' \u2014 ' + escapeHtml(row.item) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
+  }
+
+  function renderManifestRows(){
+    var container = document.getElementById('manifestRows');
+    container.innerHTML = manifestRows.map(function(row, idx){
+      var ex = row.extracted;
+      var extractedSummary = [ex.itemDescription, ex.referenceNumber ? ('Ref: ' + ex.referenceNumber) : null].filter(Boolean).join(' \u00b7 ');
+      return '<div class="manifest-row">' +
+        '<div class="manifest-row-header">' +
+          '<span class="manifest-extracted-text">' + escapeHtml(extractedSummary) + '</span>' +
+          '<button type="button" class="row-remove" onclick="removeManifestRow(' + idx + ')" aria-label="Remove">&times;</button>' +
+        '</div>' +
+        '<label>Matched item' + (row.matchedCatalogId ? '' : ' <span class="unmatched-flag">-- needs review</span>') + '</label>' +
+        '<select onchange="updateManifestRow(' + idx + ',\'matchedCatalogId\',this.value)">' + buildItemOptionsHtml(row.matchedCatalogId) + '</select>' +
+        '<label>Lot #</label><input value="' + escapeHtml(row.lotNumber) + '" oninput="updateManifestRow(' + idx + ',\'lotNumber\',this.value)">' +
+        '<label>Quantity</label><input type="number" min="0" step="1" value="' + escapeHtml(row.quantity) + '" oninput="updateManifestRow(' + idx + ',\'quantity\',this.value)">' +
+        '<label>Expiration date</label><input type="date" value="' + escapeHtml(row.expirationDate) + '" oninput="updateManifestRow(' + idx + ',\'expirationDate\',this.value)">' +
+      '</div>';
+    }).join('');
+  }
+
+  function updateManifestRow(idx, field, value){
+    manifestRows[idx][field] = value;
+    if(field === 'matchedCatalogId') renderManifestRows(); // refresh the "needs review" flag
+  }
+
+  function removeManifestRow(idx){
+    manifestRows.splice(idx, 1);
+    renderManifestRows();
+  }
+
+  function logManifestShipments(){
+    var btn = document.getElementById('logManifestBtn');
+    var resultEl = document.getElementById('manifestResult');
+    var receivedBy = document.getElementById('manifestReceivedBy').value;
+    var toLog = manifestRows.filter(function(r){ return r.matchedCatalogId && r.lotNumber; });
+    var skipped = manifestRows.length - toLog.length;
+    if(toLog.length === 0){
+      resultEl.className = 'result show new';
+      resultEl.innerHTML = 'Nothing to log -- match an item and enter a lot number for at least one row.';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Logging...';
+
+    var results = [];
+    toLog.reduce(function(chain, row){
+      return chain.then(function(){
+        var catalogRow = manifestCatalog.find(function(c){ return String(c.id) === String(row.matchedCatalogId); });
+        return fetch('/api/log-shipment', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            instrument: catalogRow.analyzer,
+            category: catalogRow.category,
+            item: catalogRow.item,
+            manufacturerRef: catalogRow.manufacturer_ref,
+            mckessonRef: catalogRow.mckesson_ref,
+            lotNumber: row.lotNumber,
+            quantity: row.quantity === '' ? null : Number(row.quantity),
+            expirationDate: row.expirationDate || '',
+            receivedBy: receivedBy,
+            comments: 'Logged from uploaded manifest'
+          })
+        }).then(function(r){ return r.json(); }).then(function(res){
+          results.push({ item: catalogRow.item, res: res });
+        });
+      });
+    }, Promise.resolve())
+    .then(function(){
+      btn.disabled = false;
+      btn.textContent = 'Log shipments';
+      var flaggedCount = results.filter(function(r){ return r.res.isNewLot && r.res.flaggable; }).length;
+      var errorCount = results.filter(function(r){ return r.res.error; }).length;
+      var lines = results.map(function(r){
+        if(r.res.error) return escapeHtml(r.item) + ': ERROR - ' + escapeHtml(r.res.error);
+        if(r.res.isNewLot && r.res.flaggable) return escapeHtml(r.item) + ': new lot, flagged for verification';
+        if(r.res.isNewLot) return escapeHtml(r.item) + ': new lot logged';
+        return escapeHtml(r.item) + ': same lot, restocked';
+      });
+      resultEl.className = 'result show ' + (errorCount > 0 ? 'new' : (flaggedCount > 0 ? 'info' : 'same'));
+      resultEl.innerHTML = 'Logged ' + (results.length - errorCount) + ' of ' + results.length + ' item(s)' +
+        (skipped > 0 ? ' (' + skipped + ' row(s) skipped -- no item match or lot number)' : '') + ':<br>' +
+        lines.join('<br>');
+      manifestRows = [];
+      document.getElementById('manifestReview').style.display = 'none';
+      document.getElementById('manifestFile').value = '';
+      document.getElementById('manifestStatus').textContent = '';
+    })
+    .catch(function(err){
+      btn.disabled = false;
+      btn.textContent = 'Log shipments';
       resultEl.className = 'result show new';
       resultEl.innerHTML = 'Error: ' + err.message;
     });
