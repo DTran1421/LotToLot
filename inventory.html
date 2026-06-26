@@ -474,19 +474,25 @@ function renderStepper(catalogId, field, value){
       'oninput="stepperInputChanged(' + catalogId + ',\'' + field + '\',this)" ' +
       'onblur="stepperFlush(' + catalogId + ',\'' + field + '\',this)" ' +
       'onfocus="this.select()" ' +
-      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(this);}">' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
     '<span class="save-dot"></span>' +
   '</span>';
 }
 
-// Enter commits the current field (same change-detection as tapping away)
-// and jumps straight to the next stepper input in document order, with its
-// existing value already selected -- type a number, hit Enter, type the
-// next number, hit Enter, with no extra taps to clear the old value first.
-function stepperEnterNext(inputEl){
+// Enter commits the current field (same change-detection save as blur) and
+// jumps straight to the next stepper input in document order, with its
+// existing value already selected. For In Stock specifically, pressing
+// Enter to move on is itself a deliberate "I checked this" signal -- mark
+// it reviewed even if the count didn't change, unlike a plain tap-away
+// (which deliberately stays a no-op; see stepperFlush). If the count DID
+// change, the server already auto-stamps the review as part of that save,
+// so this is occasionally a harmless redundant PATCH rather than the only
+// thing marking it reviewed.
+function stepperEnterNext(catalogId, field, inputEl){
   const inputs = Array.prototype.slice.call(document.querySelectorAll('.stepper-input'));
   const idx = inputs.indexOf(inputEl);
+  if(field === 'in_stock') markReviewed(catalogId);
   inputEl.blur();
   if(idx !== -1 && idx + 1 < inputs.length){
     const next = inputs[idx + 1];
@@ -695,6 +701,34 @@ function toggleReviewed(catalogId, btnEl){
   .catch(function(err){
     btnEl.disabled = false;
     alert('Save failed: ' + err.message);
+  });
+}
+
+// One-way version for the Enter-to-next-field flow: pressing Enter to move
+// on is a deliberate "I checked this" signal even when the count didn't
+// change (a plain blur/tap-away deliberately stays a no-op -- see
+// stepperFlush -- since that could just be an accidental tap). Unlike
+// toggleReviewed, this never un-marks an already-reviewed item, and fails
+// silently rather than alert()-ing, since it runs in the background during
+// rapid sequential entry where a popup would defeat the whole point.
+function markReviewed(catalogId){
+  const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
+  if(!row) return;
+  const newValue = new Date().toISOString();
+  fetch('/api/inventory', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){ console.error('Mark reviewed failed:', res.error); return; }
+    row.last_reviewed_at = newValue;
+    refreshReviewedCell(catalogId);
+    updateReviewProgress();
+  })
+  .catch(function(err){
+    console.error('Mark reviewed failed:', err.message);
   });
 }
 
