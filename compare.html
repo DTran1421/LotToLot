@@ -226,7 +226,7 @@ function applyTeaLookup(c){
 // This page is served from the same Vercel project as the API routes, so
 // calls to /api/... are same-origin -- no more CORS workarounds needed.
 
-let job = {instrument:"",serialNumber:"",performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
+let job = {instrument:"",serialNumber:"",serialManualMode:false,performedBy:"",date:"",reason:"New lot received (routine)",comments:""};
 
 let instructionsOpen = false;
 let cardIdSeed = 1;
@@ -317,16 +317,48 @@ function renderMasthead(){
   </div>`;
 }
 
+// Known serial numbers per instrument -- not every physical unit listed
+// here maps to an existing catalog/reagent-tracking instrument (IDS-iSYS,
+// Aution Max AX-4030 weren't previously selectable), so those were added
+// to the Instrument list too. DxI 800 and DxI 9000 are tracked as one
+// combined catalog entry ("DxI 800/9000"), so all 4 physical units across
+// both sub-models show up together under that one instrument.
+var SERIAL_NUMBERS = {
+  'Beckman Coulter DxC 700 AU': ['2022092979', '2022123260', '2025060075'],
+  'Beckman Coulter DxI 800/9000': ['609750', '300620', '300636', '300652'],
+  'Beckman Coulter DxA 5000 (Automation Track)': ['T17P000046'],
+  'Beckman Coulter DxH 900': ['84353940', '84384070'],
+  'Beckman Coulter SMS II (Slide Maker Stainer)': ['84356747'],
+  'IDS-iSYS': ['B300B0573', 'B300B1331'],
+  'Tosoh G8': ['1550908', 'SN1538204'],
+  'Sedimat 15 Plus': ['5086'],
+  'Beckman Coulter DxU Iris 840m': ['101654'],
+  'Aution Max AX-4030': ['12412015'],
+};
+
 function renderJobCard(){
+  const knownSerials = SERIAL_NUMBERS[job.instrument] || [];
+  const serialIsKnown = knownSerials.indexOf(job.serialNumber) !== -1;
+  const showManualInput = job.serialManualMode || (!!job.serialNumber && !serialIsKnown);
+
+  const serialField = knownSerials.length > 0
+    ? `<select onchange="onSerialSelectChange(this.value)">
+        <option value="">-- choose serial --</option>
+        ${knownSerials.map(s=>`<option value="${s}" ${job.serialNumber===s?'selected':''}>${s}</option>`).join('')}
+        <option value="__other__" ${showManualInput?'selected':''}>Other / type manually</option>
+      </select>
+      ${showManualInput ? `<input type="text" data-job="serialNumber" value="${job.serialNumber}" placeholder="Enter serial number" style="margin-top:6px;">` : ''}`
+    : `<input type="text" data-job="serialNumber" value="${job.serialNumber}" placeholder="Instrument serial #">`;
+
   return `<div class="card no-print">
     <h2>Job information</h2>
     <div class="grid cols-3">
       <div class="field"><label>Instrument</label>
         <select data-job="instrument">
-          ${["","Beckman Coulter DxC 700 AU","Beckman Coulter DxI 800/9000","Beckman Coulter DxH 900","Beckman Coulter DxU Iris 840m","Beckman Coulter DxA 5000 (Automation Track)","Beckman Coulter SMS II (Slide Maker Stainer)","Tosoh G8","Siemens CLINITEK","Sedimat 15 Plus","Hemosure (Waived FOB Test)","Waived Testing (Various Kits)","Linearity Materials (All Instruments)","General Lab Supplies","Other"].map(o=>`<option ${job.instrument===o?'selected':''}>${o}</option>`).join('')}
+          ${["","Beckman Coulter DxC 700 AU","Beckman Coulter DxI 800/9000","Beckman Coulter DxH 900","Beckman Coulter DxU Iris 840m","Beckman Coulter DxA 5000 (Automation Track)","Beckman Coulter SMS II (Slide Maker Stainer)","Tosoh G8","Siemens CLINITEK","Sedimat 15 Plus","IDS-iSYS","Aution Max AX-4030","Hemosure (Waived FOB Test)","Waived Testing (Various Kits)","Linearity Materials (All Instruments)","General Lab Supplies","Other"].map(o=>`<option ${job.instrument===o?'selected':''}>${o}</option>`).join('')}
         </select>
       </div>
-      <div class="field"><label>Serial number</label><input type="text" data-job="serialNumber" value="${job.serialNumber}" placeholder="Instrument serial #"></div>
+      <div class="field"><label>Serial number</label>${serialField}</div>
       <div class="field"><label>Date performed</label><input type="date" data-job="date" value="${job.date}"></div>
       <div class="field"><label>Reason for lot change</label>
         <select data-job="reason">
@@ -337,6 +369,20 @@ function renderJobCard(){
       <div class="field"><label>Comments</label><input type="text" data-job="comments" value="${job.comments}"></div>
     </div>
   </div>`;
+}
+
+// Dedicated handler (not data-job) so the "__other__" sentinel never
+// literally lands in job.serialNumber -- it just reveals the free-text
+// fallback input instead.
+function onSerialSelectChange(value){
+  if(value === '__other__'){
+    job.serialManualMode = true;
+    job.serialNumber = '';
+  } else {
+    job.serialManualMode = false;
+    job.serialNumber = value;
+  }
+  render();
 }
 
 function teaDescription(c){
@@ -646,7 +692,9 @@ function attachHandlers(){
     el.addEventListener('change', e=>{
       job[el.dataset.job] = el.value;
       if(el.dataset.job==='instrument'){
-        analytes.forEach(c => RawData.refresh('rd-card-' + c.id, job.instrument, c.category, c.analyteName));
+        job.serialNumber = ''; // old serial almost certainly belongs to the previous instrument
+        job.serialManualMode = false;
+        render();
       }
     });
   });
