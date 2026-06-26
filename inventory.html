@@ -470,13 +470,29 @@ window.addEventListener('beforeunload', function(e){
 function renderStepper(catalogId, field, value){
   return '<span class="stepper">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',-1,this)" aria-label="Decrease">&minus;</button>' +
-    '<input class="stepper-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="' + value + '" ' +
+    '<input class="stepper-input" type="text" inputmode="numeric" pattern="[0-9]*" value="' + value + '" ' +
       'oninput="stepperInputChanged(' + catalogId + ',\'' + field + '\',this)" ' +
       'onblur="stepperFlush(' + catalogId + ',\'' + field + '\',this)" ' +
-      'onkeydown="if(event.key===\'Enter\'){this.blur();}">' +
+      'onfocus="this.select()" ' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(this);}">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
     '<span class="save-dot"></span>' +
   '</span>';
+}
+
+// Enter commits the current field (same change-detection as tapping away)
+// and jumps straight to the next stepper input in document order, with its
+// existing value already selected -- type a number, hit Enter, type the
+// next number, hit Enter, with no extra taps to clear the old value first.
+function stepperEnterNext(inputEl){
+  const inputs = Array.prototype.slice.call(document.querySelectorAll('.stepper-input'));
+  const idx = inputs.indexOf(inputEl);
+  inputEl.blur();
+  if(idx !== -1 && idx + 1 < inputs.length){
+    const next = inputs[idx + 1];
+    next.focus();
+    next.select();
+  }
 }
 
 function stepperStep(catalogId, field, delta, btnEl){
@@ -490,13 +506,16 @@ function stepperStep(catalogId, field, delta, btnEl){
 
 function stepperInputChanged(catalogId, field, inputEl){
   const container = inputEl.closest('.stepper');
-  const value = inputEl.value === '' ? 0 : Number(inputEl.value);
+  const digitsOnly = inputEl.value.replace(/[^0-9]/g, '');
+  if(digitsOnly !== inputEl.value) inputEl.value = digitsOnly;
+  const value = digitsOnly === '' ? 0 : Number(digitsOnly);
   scheduleSave(catalogId, field, value, container);
 }
 
 function stepperFlush(catalogId, field, inputEl){
   const container = inputEl.closest('.stepper');
-  const value = inputEl.value === '' ? 0 : Number(inputEl.value);
+  const digitsOnly = inputEl.value.replace(/[^0-9]/g, '');
+  const value = digitsOnly === '' ? 0 : Number(digitsOnly);
   const key = catalogId + ':' + field;
   if(pendingTimers[key]){ clearTimeout(pendingTimers[key]); delete pendingTimers[key]; }
 
@@ -686,12 +705,6 @@ function updateReviewProgress(){
   el.textContent = reviewedCount + ' of ' + allRows.length + ' reviewed';
 }
 
-// Prevent the classic accidental-scroll-changes-the-number bug: blur a
-// focused stepper input on wheel instead of letting the browser mutate it.
-document.addEventListener('wheel', function(e){
-  const active = document.activeElement;
-  if(active && active.classList && active.classList.contains('stepper-input')) active.blur();
-}, { passive: true });
 
 /* ---------- Load ---------- */
 
