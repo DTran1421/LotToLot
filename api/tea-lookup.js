@@ -86,8 +86,48 @@ If a sample only has one value with no clear pairing column, still include it wi
   res.status(200).json(data);
 }
 
+/**
+ * Minimal-cost check that ANTHROPIC_API_KEY actually authenticates, without
+ * doing a real (more expensive) extraction call. max_tokens:1 and no file
+ * attached -- this is about as cheap as a real Anthropic API call can be,
+ * while still being a genuine round-trip to their servers rather than a
+ * mock, since validity can only be confirmed by Anthropic actually
+ * checking it. GET so it can be checked directly without uploading
+ * anything through the UI first.
+ */
+async function handleCheckKey(req, res) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(200).json({ ok: false, reason: 'not_set' });
+  }
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+  });
+  const data = await response.json();
+  if (response.ok) {
+    return res.status(200).json({ ok: true });
+  }
+  return res.status(200).json({
+    ok: false,
+    reason: (data.error && data.error.type) || 'unknown',
+    message: (data.error && data.error.message) || '',
+  });
+}
+
 module.exports = async (req, res) => {
   try {
+    if (req.query.action === 'check-key') {
+      return await handleCheckKey(req, res);
+    }
     if (req.method === 'POST') {
       return await handleExtract(req, res);
     }
