@@ -499,6 +499,20 @@ function stepperFlush(catalogId, field, inputEl){
   const value = inputEl.value === '' ? 0 : Number(inputEl.value);
   const key = catalogId + ':' + field;
   if(pendingTimers[key]){ clearTimeout(pendingTimers[key]); delete pendingTimers[key]; }
+
+  // Tapping into a field and back out without changing it (e.g. moving to
+  // the next row on mobile) shouldn't trigger a save -- previously every
+  // blur unconditionally saved, which flashed the dot and (for in_stock)
+  // auto-stamped a review even though nothing was actually verified/changed.
+  // That's what reads as "it's updating something" just from moving fields.
+  const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
+  const currentValue = row ? Number(row[field] || 0) : null;
+  if(currentValue === value){
+    unsavedKeys.delete(key);
+    updateSaveStatus();
+    return;
+  }
+
   unsavedKeys.add(key);
   updateSaveStatus();
   saveField(catalogId, field, value, container);

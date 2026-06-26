@@ -56,6 +56,9 @@
     <label>Lot number received</label>
     <input id="lotNumber" placeholder="e.g. 4815162342">
 
+    <label>Quantity received</label>
+    <input id="quantity" type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 4">
+
     <label>Expiration date</label>
     <input id="expirationDate" type="date">
 
@@ -181,6 +184,7 @@
       manufacturerRef: it.manufacturer_ref,
       mckessonRef: it.mckesson_ref,
       lotNumber: document.getElementById('lotNumber').value,
+      quantity: document.getElementById('quantity').value === '' ? null : Number(document.getElementById('quantity').value),
       expirationDate: document.getElementById('expirationDate').value,
       receivedBy: document.getElementById('receivedBy').value,
       comments: document.getElementById('comments').value
@@ -221,6 +225,7 @@
       }
       resultEl.innerHTML = msg;
       document.getElementById('lotNumber').value = '';
+      document.getElementById('quantity').value = '';
       document.getElementById('comments').value = '';
     })
     .catch(function(err){

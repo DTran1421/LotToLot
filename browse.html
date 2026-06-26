@@ -6,6 +6,7 @@
 <title>Lot Tracking - Browse</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
 <script src="/report.js"></script>
+<script src="/raw-data.js"></script>
 <style>
   :root{--navy:#0f2a47;--navy-light:#1c3f63;--bg:#f4f6f8;--card:#ffffff;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
@@ -106,7 +107,7 @@ var currentRows = [];
 var COLUMN_LABELS = {
   reagent_master: ['instrument','category','item','manufacturer_ref','mckesson_ref','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
   lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified'],
-  receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','expiration_date','previous_lot','is_new_lot','status','comments'],
+  receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','quantity','expiration_date','previous_lot','is_new_lot','status','comments'],
   catalog: ['analyzer','item','category','manufacturer_name','manufacturer_ref','mckesson_ref','pack_size']
 };
 
@@ -180,11 +181,12 @@ function render(){
   const cols = COLUMN_LABELS[currentTable];
   const showApprove = APPROVABLE_TABLES.indexOf(currentTable) !== -1;
   const showFilters = FILTERABLE_TABLES.indexOf(currentTable) !== -1;
+  const showRawData = currentTable === 'reagent_master';
   document.getElementById('filterInstrument').style.display = showFilters ? '' : 'none';
   document.getElementById('filterItem').style.display = showFilters ? '' : 'none';
 
   const head = document.getElementById('tableHead');
-  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
+  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showRawData ? '<th>Raw Data</th>' : '') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
 
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const instFilter = showFilters ? document.getElementById('filterInstrument').value : '';
@@ -202,9 +204,15 @@ function render(){
 
   const body = document.getElementById('tableBody');
   body.innerHTML = '';
+  const rawDataInits = [];
   filtered.forEach(function(row){
     const tr = document.createElement('tr');
     let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
+    if(showRawData){
+      const domId = 'rd-' + row.id;
+      html += '<td>' + RawData.render(domId, row.instrument, row.category, row.item) + '</td>';
+      rawDataInits.push([domId, row.instrument, row.category, row.item]);
+    }
     if(showApprove){
       html += canApprove(row)
         ? '<td class="approve-cell"><button data-preview-btn>Preview</button><br><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
@@ -221,6 +229,8 @@ function render(){
     }
     body.appendChild(tr);
   });
+  // Widgets only fetch their file list once they're actually in the DOM.
+  rawDataInits.forEach(function(args){ RawData.init.apply(null, args); });
 
   document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';

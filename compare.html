@@ -6,6 +6,7 @@
 <title>Lot-to-Lot Comparison Report Builder</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
 <script src="/report.js"></script>
+<script src="/raw-data.js"></script>
 <style>
   :root{
     --navy:#0f2a47;
@@ -288,6 +289,7 @@ function render(){
     <div id="report" class="report-page"></div>
   `;
   attachHandlers();
+  analytes.forEach(c => RawData.init('rd-card-' + c.id, job.instrument, c.category, c.analyteName));
 }
 
 function renderInstructionsPanel(){
@@ -426,11 +428,13 @@ function renderAnalyteCard(c){
       <div class="field"><label>Category (for Lot Tracking write-back)</label>
         <select data-field="category" data-card="${c.id}">
           <option value="" ${c.category===''?'selected':''}>-- not set, won't write back --</option>
-          ${["Reagent","Calibrator","Control","Chemical","Equipment","Misc","Linearity"].map(o=>`<option value="${o}" ${c.category===o?'selected':''}>${o}</option>`).join('')}
+          ${["Reagent","Calibrator","Control","Chemical","Equipment","Linearity"].map(o=>`<option value="${o}" ${c.category===o?'selected':''}>${o}</option>`).join('')}
         </select>
       </div>
     </div>
     <p class="hint">Category only needs to be set if you want "Save report" to write a status update back to the Reagent Master sheet for this item. It auto-fills when you arrive here via a "Start verification" link.</p>
+
+    ${RawData.render('rd-card-' + c.id, job.instrument, c.category, c.analyteName)}
 
     <div class="grid cols-3" style="margin-top:10px;">
       <div class="field"><label>TEa source</label><input type="text" value="${c.teaSource}" disabled style="background:#f6f8fa;color:var(--muted);"></div>
@@ -658,7 +662,12 @@ function attachHandlers(){
   analyteDatalist();
   document.querySelectorAll('[data-job]').forEach(el=>{
     el.addEventListener('input', e=>{ job[el.dataset.job] = el.value; });
-    el.addEventListener('change', e=>{ job[el.dataset.job] = el.value; });
+    el.addEventListener('change', e=>{
+      job[el.dataset.job] = el.value;
+      if(el.dataset.job==='instrument'){
+        analytes.forEach(c => RawData.refresh('rd-card-' + c.id, job.instrument, c.category, c.analyteName));
+      }
+    });
   });
   document.querySelectorAll('[data-field]').forEach(el=>{
     el.addEventListener('input', e=>{
@@ -681,6 +690,10 @@ function attachHandlers(){
         const c = getCard(parseInt(el.dataset.card));
         c.teaMode = el.value;
         render();
+      }
+      if(el.dataset.field==='category'){
+        const c = getCard(parseInt(el.dataset.card));
+        if(c) RawData.refresh('rd-card-' + c.id, job.instrument, c.category, c.analyteName);
       }
     });
   });

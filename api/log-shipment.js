@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
   try {
     const {
       instrument, category, item, manufacturerRef, mckessonRef,
-      lotNumber, expirationDate, receivedBy, comments,
+      lotNumber, quantity, expirationDate, receivedBy, comments,
     } = req.body;
     if (!instrument || !item || !lotNumber) {
       return res.status(400).json({ error: 'instrument, item, and lotNumber are required' });
@@ -101,6 +101,7 @@ module.exports = async (req, res) => {
       manufacturer_ref: manufacturerRef || null,
       mckesson_ref: mckessonRef || null,
       lot_number: lotNumber,
+      quantity: quantity || null,
       expiration_date: expirationDate || null,
       previous_lot: previousLot,
       is_new_lot: isNewLot,
