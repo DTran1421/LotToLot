@@ -6,7 +6,11 @@ const supabase = require('./_supabase');
 const TABLES = {
   catalog: { order: [['analyzer', false], ['category', false], ['item', false]], limit: 1000 },
   reagent_master: { order: [['instrument', false], ['item', false]], limit: 1000 },
-  receiving_log: { order: [['logged_at', true]], limit: 500 },
+  receiving_log: {
+    order: [['logged_at', true]],
+    limit: 500,
+    select: '*, manifest_uploads(file_url, filename)',
+  },
   lot_to_lot_reports: { order: [['submitted_at', true]], limit: 1000 },
 };
 
@@ -108,7 +112,7 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'table must be one of: ' + Object.keys(TABLES).join(', ') });
     }
     const cfg = TABLES[table];
-    let query = supabase.from(table).select('*').limit(cfg.limit);
+    let query = supabase.from(table).select(cfg.select || '*').limit(cfg.limit);
     cfg.order.forEach(([col, desc]) => {
       query = query.order(col, { ascending: !desc });
     });

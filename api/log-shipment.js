@@ -20,7 +20,7 @@ function buildComparisonUrl(instrument, category, item, oldLot, newLot) {
 async function handleLogShipment(req, res) {
   const {
     instrument, category, item, manufacturerRef, mckessonRef,
-    lotNumber, quantity, expirationDate, receivedBy, comments,
+    lotNumber, quantity, expirationDate, receivedBy, comments, manifestUploadId,
   } = req.body;
   if (!instrument || !item || !lotNumber) {
     return res.status(400).json({ error: 'instrument, item, and lotNumber are required' });
@@ -105,6 +105,7 @@ async function handleLogShipment(req, res) {
     is_new_lot: isNewLot,
     status,
     comments: comments || '',
+    manifest_upload_id: manifestUploadId || null,
   });
   if (logErr) throw logErr;
 
@@ -188,14 +189,14 @@ Use null for any field that isn't present or legible for a given line. If you fi
 async function handleReviewQueueGet(req, res) {
   const { data, error } = await supabase
     .from('manifest_review_queue')
-    .select('*')
+    .select('*, manifest_uploads(file_url, filename)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   res.status(200).json(data);
 }
 
 async function handleReviewQueuePost(req, res) {
-  const { extracted, lotNumber, quantity, expirationDate, receivedBy } = req.body;
+  const { extracted, lotNumber, quantity, expirationDate, receivedBy, manifestUploadId } = req.body;
   if (!extracted) return res.status(400).json({ error: 'extracted is required' });
 
   const { data, error } = await supabase
@@ -206,6 +207,7 @@ async function handleReviewQueuePost(req, res) {
       quantity: quantity != null ? String(quantity) : null,
       expiration_date: expirationDate || null,
       received_by: receivedBy || null,
+      manifest_upload_id: manifestUploadId || null,
     })
     .select();
   if (error) throw error;
@@ -234,8 +236,39 @@ async function handleReviewQueuePatch(req, res) {
   res.status(200).json(data[0]);
 }
 
+/**
+ * Records the metadata row for a manifest file that was just uploaded
+ * directly from the browser to Supabase Storage (same direct-to-storage
+ * pattern as raw-data.js's attachments -- the file itself never touches
+ * this serverless function, only its resulting public URL does). Every
+ * receiving_log row and manifest_review_queue row produced from this one
+ * upload gets tagged with the returned id, so either can always be traced
+ * back to the literal source document later.
+ */
+async function handleSaveManifestUpload(req, res) {
+  const { fileUrl, filename, contentType, uploadedBy } = req.body;
+  if (!fileUrl) return res.status(400).json({ error: 'fileUrl is required' });
+
+  const { data, error } = await supabase
+    .from('manifest_uploads')
+    .insert({
+      file_url: fileUrl,
+      filename: filename || null,
+      content_type: contentType || null,
+      uploaded_by: uploadedBy || null,
+    })
+    .select();
+  if (error) throw error;
+  res.status(200).json(data[0]);
+}
+
 module.exports = async (req, res) => {
   try {
+    if (req.query.action === 'save-manifest-upload') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+      return await handleSaveManifestUpload(req, res);
+    }
+
     if (req.query.action === 'review-queue') {
       if (req.method === 'GET') return await handleReviewQueueGet(req, res);
       if (req.method === 'POST') return await handleReviewQueuePost(req, res);

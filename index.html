@@ -295,6 +295,41 @@
 
   var manifestCatalog = [];
   var manifestRows = []; // {extracted, matchedCatalogId, lotNumber, quantity, expirationDate}
+  var currentManifestUploadId = ''; // ties every row in this batch back to the literal source document
+
+  var SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
+
+  // Uploads the raw manifest file straight to Storage (same direct-to-storage
+  // pattern raw-data.js uses for IFU/SDS attachments -- no Vercel body-size
+  // limit on the file itself) and records its metadata. Failure here is
+  // non-fatal: extraction still proceeds even if the save didn't go
+  // through, it just means this batch won't have a "View original" link.
+  function uploadManifestFile(file){
+    var safeName = file.name.replace(/[^a-zA-Z0-9_.\-]+/g, '_');
+    var storagePath = 'manifest-uploads/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + safeName;
+    return fetch(SUPABASE_URL + '/storage/v1/object/raw-data/' + storagePath, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    }).then(function(uploadRes){
+      if(!uploadRes.ok) throw new Error('Storage upload failed');
+      var fileUrl = SUPABASE_URL + '/storage/v1/object/public/raw-data/' + storagePath;
+      return fetch('/api/log-shipment?action=save-manifest-upload', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ fileUrl: fileUrl, filename: file.name, contentType: file.type })
+      }).then(function(r){ return r.json(); });
+    }).then(function(row){
+      return row && row.id ? row.id : '';
+    }).catch(function(){
+      return ''; // non-fatal -- proceed without a source-document link for this batch
+    });
+  }
 
   function fileToBase64(file){
     return new Promise(function(resolve, reject){
@@ -360,6 +395,12 @@
     var statusEl = document.getElementById('manifestStatus');
     statusEl.textContent = 'Reading file...';
     document.getElementById('manifestReview').style.display = 'none';
+    currentManifestUploadId = '';
+
+    // Save the original document in parallel with extraction -- this is
+    // what lets every row from this batch link back to the literal source
+    // file later, not just the AI's text interpretation of it.
+    uploadManifestFile(file).then(function(id){ currentManifestUploadId = id; });
 
     fileToBase64(file).then(function(base64){
       var isPdf = file.type === 'application/pdf';
@@ -550,7 +591,8 @@
           quantity: row.quantity === '' ? null : Number(row.quantity),
           expirationDate: row.expirationDate || '',
           receivedBy: receivedBy,
-          comments: 'Logged from uploaded manifest'
+          comments: 'Logged from uploaded manifest',
+          manifestUploadId: currentManifestUploadId || null
         })
       }).then(function(r){ return r.json(); }).then(function(res){
         logResults.push({ item: catalogRow.item, res: res });
@@ -603,7 +645,8 @@
             lotNumber: row.lotNumber,
             quantity: row.quantity,
             expirationDate: row.expirationDate,
-            receivedBy: receivedBy
+            receivedBy: receivedBy,
+            manifestUploadId: currentManifestUploadId || null
           })
         }).then(function(r){ return r.json(); }).then(function(res){
           if(res.error) queueErrors++; else queuedCount++;

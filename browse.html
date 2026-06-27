@@ -150,7 +150,7 @@ var currentRows = [];
 var COLUMN_LABELS = {
   reagent_master: ['instrument','category','item','manufacturer_ref','mckesson_ref','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
   lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified'],
-  receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','quantity','expiration_date','previous_lot','is_new_lot','status','comments'],
+  receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','quantity','expiration_date','previous_lot','is_new_lot','status','comments','source_manifest_url'],
   catalog: ['analyzer','item','category','manufacturer_name','manufacturer_ref','mckesson_ref','pack_size','storage_temperature','storage_location','vendor']
 };
 
@@ -194,6 +194,9 @@ function formatCell(col, value){
   if(col === 'comparison_url'){
     return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">Start verification &rarr;</a>';
   }
+  if(col === 'source_manifest_url'){
+    return '<a class="pdf-link" href="' + escapeHtml(value) + '" target="_blank">View original</a>';
+  }
   if(col === 'is_new_lot'){
     return value ? 'Yes' : 'No';
   }
@@ -213,6 +216,7 @@ function niceLabel(col){
   if(col === 'manufacturer_ref') return 'Mfr Ref #';
   if(col === 'pack_size') return 'Pack/Unit Size';
   if(col === 'mckesson_ref') return 'McKesson Ref #';
+  if(col === 'source_manifest_url') return 'Source Manifest';
   return col.replace(/_/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
@@ -453,7 +457,12 @@ function load(table){
     .then(function(r){ return r.json(); })
     .then(function(rows){
       if(rows.error){ throw new Error(rows.error); }
-      currentRows = rows;
+      currentRows = rows.map(function(r){
+        if(r.manifest_uploads){
+          r.source_manifest_url = r.manifest_uploads.file_url;
+        }
+        return r;
+      });
       populateFilterDropdowns();
       render();
     })
@@ -550,7 +559,9 @@ function renderNeedsReview(){
     return '<div class="review-row">' +
       '<div class="review-row-header">' +
         '<div class="review-extracted"><strong>' + escapeHtml(summary) + '</strong>' +
-          '<span class="small">Queued ' + new Date(row.created_at).toLocaleString() + (row.received_by ? ' by ' + escapeHtml(row.received_by) : '') + '</span>' +
+          '<span class="small">Queued ' + new Date(row.created_at).toLocaleString() + (row.received_by ? ' by ' + escapeHtml(row.received_by) : '') +
+          (row.manifest_uploads ? ' &mdash; <a class="pdf-link" href="' + escapeHtml(row.manifest_uploads.file_url) + '" target="_blank">View original</a>' : '') +
+          '</span>' +
         '</div>' +
         '<span class="pill ' + pillCls + '">' + escapeHtml(row.status) + '</span>' +
       '</div>' +
