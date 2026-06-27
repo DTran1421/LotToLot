@@ -38,6 +38,9 @@
   .manifest-extracted-text{font-size:12px;color:var(--muted);font-style:italic;flex:1;}
   .row-remove{width:auto;margin:0;padding:2px 8px;background:none;color:var(--bad);border:1px solid var(--bad);font-size:14px;line-height:1.2;border-radius:6px;}
   .unmatched-flag{color:var(--bad);text-transform:none;font-weight:700;}
+  .new-item-box{border:1px dashed var(--line);border-radius:6px;padding:10px;margin-top:8px;background:#fff;}
+  .new-item-box label{margin:8px 0 4px;}
+  .new-item-box label:first-child{margin-top:0;}
 </style>
 </head>
 <body>
@@ -99,6 +102,11 @@
       <label>Received by (applies to every item below)</label>
       <input id="manifestReceivedBy" placeholder="Your name">
       <div id="manifestRows"></div>
+      <datalist id="instrument-datalist"></datalist>
+      <datalist id="category-datalist">
+        <option value="Reagent"><option value="Calibrator"><option value="Control">
+        <option value="Chemical"><option value="Equipment"><option value="Misc"><option value="Linearity">
+      </datalist>
       <button type="button" id="logManifestBtn" onclick="logManifestShipments()">Log shipments</button>
       <div class="result" id="manifestResult"></div>
     </div>
@@ -115,6 +123,14 @@
       opt.value = i; opt.textContent = i;
       sel.appendChild(opt);
     });
+    var dl = document.getElementById('instrument-datalist');
+    if(dl){
+      list.forEach(function(i){
+        var opt = document.createElement('option');
+        opt.value = i;
+        dl.appendChild(opt);
+      });
+    }
   }).catch(function(err){
     document.getElementById('result').className = 'result show new';
     document.getElementById('result').innerHTML = 'Could not load instruments: ' + err.message;
@@ -383,7 +399,7 @@
         });
         var unmatched = manifestRows.filter(function(r){ return !r.matchedCatalogId; }).length;
         statusEl.textContent = 'Extracted ' + items.length + ' item(s)' +
-          (unmatched > 0 ? ' (' + unmatched + ' need a manual match)' : '') +
+          (unmatched > 0 ? ' (' + unmatched + ' need review -- match, add as new, or they\u2019ll be sent to Needs Review)' : '') +
           ' -- review below before logging.';
         renderManifestRows();
         document.getElementById('manifestReview').style.display = 'block';
@@ -402,7 +418,8 @@
       groups[row.analyzer].push(row);
     });
     order.sort();
-    var html = '<option value="">-- unmatched, choose manually --</option>';
+    var html = '<option value=""' + (!selectedId ? ' selected' : '') + '>-- unmatched, choose manually --</option>' +
+      '<option value="__new__"' + (selectedId === '__new__' ? ' selected' : '') + '>+ Add as new catalog item</option>';
     order.forEach(function(instrument){
       html += '<optgroup label="' + escapeHtml(instrument) + '">';
       groups[instrument].forEach(function(row){
@@ -412,6 +429,20 @@
       html += '</optgroup>';
     });
     return html;
+  }
+
+  function newItemFieldsHtml(idx, row){
+    if(row.matchedCatalogId !== '__new__') return '';
+    var ni = row.newItem || {};
+    return '<div class="new-item-box">' +
+      '<label>Instrument</label><input list="instrument-datalist" value="' + escapeHtml(ni.analyzer||'') + '" oninput="updateManifestNewItem(' + idx + ',\'analyzer\',this.value)">' +
+      '<label>Material type</label><input list="category-datalist" value="' + escapeHtml(ni.category||'') + '" oninput="updateManifestNewItem(' + idx + ',\'category\',this.value)">' +
+      '<label>Item name</label><input value="' + escapeHtml(ni.item||'') + '" oninput="updateManifestNewItem(' + idx + ',\'item\',this.value)">' +
+      '<label>Manufacturer name</label><input value="' + escapeHtml(ni.manufacturer_name||'') + '" oninput="updateManifestNewItem(' + idx + ',\'manufacturer_name\',this.value)">' +
+      '<label>Manufacturer ref #</label><input value="' + escapeHtml(ni.manufacturer_ref||'') + '" oninput="updateManifestNewItem(' + idx + ',\'manufacturer_ref\',this.value)">' +
+      '<label>McKesson ref # (optional)</label><input value="' + escapeHtml(ni.mckesson_ref||'') + '" oninput="updateManifestNewItem(' + idx + ',\'mckesson_ref\',this.value)">' +
+      '<label>Pack/unit size (optional)</label><input value="' + escapeHtml(ni.pack_size||'') + '" oninput="updateManifestNewItem(' + idx + ',\'pack_size\',this.value)">' +
+    '</div>';
   }
 
   function renderManifestRows(){
@@ -426,6 +457,7 @@
         '</div>' +
         '<label>Matched item' + (row.matchedCatalogId ? '' : ' <span class="unmatched-flag">-- needs review</span>') + '</label>' +
         '<select onchange="updateManifestRow(' + idx + ',\'matchedCatalogId\',this.value)">' + buildItemOptionsHtml(row.matchedCatalogId) + '</select>' +
+        newItemFieldsHtml(idx, row) +
         '<label>Lot #</label><input value="' + escapeHtml(row.lotNumber) + '" oninput="updateManifestRow(' + idx + ',\'lotNumber\',this.value)">' +
         '<label>Quantity</label><input type="number" min="0" step="1" value="' + escapeHtml(row.quantity) + '" oninput="updateManifestRow(' + idx + ',\'quantity\',this.value)">' +
         '<label>Expiration date</label><input type="date" value="' + escapeHtml(row.expirationDate) + '" oninput="updateManifestRow(' + idx + ',\'expirationDate\',this.value)">' +
@@ -435,7 +467,26 @@
 
   function updateManifestRow(idx, field, value){
     manifestRows[idx][field] = value;
-    if(field === 'matchedCatalogId') renderManifestRows(); // refresh the "needs review" flag
+    if(field === 'matchedCatalogId'){
+      if(value === '__new__' && !manifestRows[idx].newItem){
+        var ex = manifestRows[idx].extracted;
+        manifestRows[idx].newItem = {
+          analyzer: '',
+          category: '',
+          item: ex.itemDescription || '',
+          manufacturer_name: '',
+          manufacturer_ref: ex.referenceNumber || '',
+          mckesson_ref: '',
+          pack_size: ''
+        };
+      }
+      renderManifestRows(); // refresh the "needs review" flag / new-item form
+    }
+  }
+
+  function updateManifestNewItem(idx, field, value){
+    if(!manifestRows[idx].newItem) manifestRows[idx].newItem = {};
+    manifestRows[idx].newItem[field] = value;
   }
 
   function removeManifestRow(idx){
@@ -447,55 +498,137 @@
     var btn = document.getElementById('logManifestBtn');
     var resultEl = document.getElementById('manifestResult');
     var receivedBy = document.getElementById('manifestReceivedBy').value;
-    var toLog = manifestRows.filter(function(r){ return r.matchedCatalogId && r.lotNumber; });
-    var skipped = manifestRows.length - toLog.length;
-    if(toLog.length === 0){
+
+    // Bucket every row into exactly one outcome -- nothing falls through
+    // to being silently dropped anymore. A row only needs a lot number to
+    // be actionable; everything else either has a real catalog match, is
+    // creating a brand new catalog item on the spot, or goes to the
+    // Needs Review queue to be resolved later instead of just vanishing.
+    var toLogExisting = [];
+    var toCreateThenLog = [];
+    var toQueue = [];
+    manifestRows.forEach(function(row){
+      if(row.matchedCatalogId === '__new__'){
+        var ni = row.newItem || {};
+        if(row.lotNumber && ni.analyzer && ni.category && ni.item){
+          toCreateThenLog.push(row);
+        } else {
+          toQueue.push(row);
+        }
+      } else if(row.matchedCatalogId && row.lotNumber){
+        toLogExisting.push(row);
+      } else {
+        toQueue.push(row);
+      }
+    });
+
+    if(toLogExisting.length === 0 && toCreateThenLog.length === 0 && toQueue.length === 0){
       resultEl.className = 'result show new';
-      resultEl.innerHTML = 'Nothing to log -- match an item and enter a lot number for at least one row.';
+      resultEl.innerHTML = 'Nothing to log.';
       return;
     }
+
     btn.disabled = true;
     btn.textContent = 'Logging...';
 
-    var results = [];
-    toLog.reduce(function(chain, row){
-      return chain.then(function(){
+    var logResults = [];
+    var createdCount = 0;
+    var queuedCount = 0;
+    var queueErrors = 0;
+
+    function logOneShipment(catalogRow, row){
+      return fetch('/api/log-shipment', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          instrument: catalogRow.analyzer,
+          category: catalogRow.category,
+          item: catalogRow.item,
+          manufacturerRef: catalogRow.manufacturer_ref,
+          mckessonRef: catalogRow.mckesson_ref,
+          lotNumber: row.lotNumber,
+          quantity: row.quantity === '' ? null : Number(row.quantity),
+          expirationDate: row.expirationDate || '',
+          receivedBy: receivedBy,
+          comments: 'Logged from uploaded manifest'
+        })
+      }).then(function(r){ return r.json(); }).then(function(res){
+        logResults.push({ item: catalogRow.item, res: res });
+      });
+    }
+
+    // 1. Existing matches -- log directly.
+    var chain = toLogExisting.reduce(function(p, row){
+      return p.then(function(){
         var catalogRow = manifestCatalog.find(function(c){ return String(c.id) === String(row.matchedCatalogId); });
-        return fetch('/api/log-shipment', {
+        return logOneShipment(catalogRow, row);
+      });
+    }, Promise.resolve());
+
+    // 2. New catalog items -- create the row first, then log against it.
+    chain = toCreateThenLog.reduce(function(p, row){
+      return p.then(function(){
+        var ni = row.newItem;
+        return fetch('/api/catalog', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
-            instrument: catalogRow.analyzer,
-            category: catalogRow.category,
-            item: catalogRow.item,
-            manufacturerRef: catalogRow.manufacturer_ref,
-            mckessonRef: catalogRow.mckesson_ref,
-            lotNumber: row.lotNumber,
-            quantity: row.quantity === '' ? null : Number(row.quantity),
-            expirationDate: row.expirationDate || '',
-            receivedBy: receivedBy,
-            comments: 'Logged from uploaded manifest'
+            analyzer: ni.analyzer,
+            category: ni.category,
+            item: ni.item,
+            manufacturer_name: ni.manufacturer_name || null,
+            manufacturer_ref: ni.manufacturer_ref || null,
+            mckesson_ref: ni.mckesson_ref || null,
+            pack_size: ni.pack_size || null
           })
-        }).then(function(r){ return r.json(); }).then(function(res){
-          results.push({ item: catalogRow.item, res: res });
+        }).then(function(r){ return r.json(); }).then(function(newCatalogRow){
+          if(newCatalogRow.error){
+            logResults.push({ item: ni.item || '(new item)', res: { error: 'Could not create catalog item: ' + newCatalogRow.error } });
+            return;
+          }
+          createdCount++;
+          return logOneShipment(newCatalogRow, row);
         });
       });
-    }, Promise.resolve())
+    }, chain);
+
+    // 3. Everything else -- queue for manual review instead of dropping it.
+    chain = toQueue.reduce(function(p, row){
+      return p.then(function(){
+        return fetch('/api/log-shipment?action=review-queue', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            extracted: row.extracted,
+            lotNumber: row.lotNumber,
+            quantity: row.quantity,
+            expirationDate: row.expirationDate,
+            receivedBy: receivedBy
+          })
+        }).then(function(r){ return r.json(); }).then(function(res){
+          if(res.error) queueErrors++; else queuedCount++;
+        });
+      });
+    }, chain);
+
+    chain
     .then(function(){
       btn.disabled = false;
       btn.textContent = 'Log shipments';
-      var flaggedCount = results.filter(function(r){ return r.res.isNewLot && r.res.flaggable; }).length;
-      var errorCount = results.filter(function(r){ return r.res.error; }).length;
-      var lines = results.map(function(r){
+      var flaggedCount = logResults.filter(function(r){ return r.res.isNewLot && r.res.flaggable; }).length;
+      var errorCount = logResults.filter(function(r){ return r.res.error; }).length;
+      var lines = logResults.map(function(r){
         if(r.res.error) return escapeHtml(r.item) + ': ERROR - ' + escapeHtml(r.res.error);
         if(r.res.isNewLot && r.res.flaggable) return escapeHtml(r.item) + ': new lot, flagged for verification';
         if(r.res.isNewLot) return escapeHtml(r.item) + ': new lot logged';
         return escapeHtml(r.item) + ': same lot, restocked';
       });
-      resultEl.className = 'result show ' + (errorCount > 0 ? 'new' : (flaggedCount > 0 ? 'info' : 'same'));
-      resultEl.innerHTML = 'Logged ' + (results.length - errorCount) + ' of ' + results.length + ' item(s)' +
-        (skipped > 0 ? ' (' + skipped + ' row(s) skipped -- no item match or lot number)' : '') + ':<br>' +
-        lines.join('<br>');
+      var summary = 'Logged ' + (logResults.length - errorCount) + ' of ' + logResults.length + ' item(s)';
+      if(createdCount > 0) summary += ', created ' + createdCount + ' new catalog item(s)';
+      if(queuedCount > 0) summary += ', sent ' + queuedCount + ' item(s) to Needs Review (Browse Data)';
+      if(queueErrors > 0) summary += ', ' + queueErrors + ' item(s) failed to queue';
+      resultEl.className = 'result show ' + (errorCount > 0 || queueErrors > 0 ? 'new' : (flaggedCount > 0 ? 'info' : 'same'));
+      resultEl.innerHTML = summary + ':<br>' + lines.join('<br>');
       manifestRows = [];
       document.getElementById('manifestReview').style.display = 'none';
       document.getElementById('manifestFile').value = '';

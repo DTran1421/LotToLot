@@ -174,9 +174,76 @@ Use null for any field that isn't present or legible for a given line. If you fi
   res.status(200).json(data);
 }
 
+/**
+ * "Needs Review" queue (Browse Data's Needs Review tab) -- holds manifest
+ * line items that couldn't be confidently matched (or weren't resolved by
+ * the time "Log shipments" was clicked) so nothing extracted from a
+ * manifest ever just silently disappears the way it used to. Folded into
+ * this file rather than a new one -- this project hit Vercel Hobby's
+ * serverless function count limit before and is already sitting right at
+ * it. Resolving a queued row (matching it to an existing or newly-created
+ * catalog item) still goes through the normal handleLogShipment() above --
+ * this is purely the holding queue itself.
+ */
+async function handleReviewQueueGet(req, res) {
+  const { data, error } = await supabase
+    .from('manifest_review_queue')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  res.status(200).json(data);
+}
+
+async function handleReviewQueuePost(req, res) {
+  const { extracted, lotNumber, quantity, expirationDate, receivedBy } = req.body;
+  if (!extracted) return res.status(400).json({ error: 'extracted is required' });
+
+  const { data, error } = await supabase
+    .from('manifest_review_queue')
+    .insert({
+      extracted,
+      lot_number: lotNumber || null,
+      quantity: quantity != null ? String(quantity) : null,
+      expiration_date: expirationDate || null,
+      received_by: receivedBy || null,
+    })
+    .select();
+  if (error) throw error;
+  res.status(200).json(data[0]);
+}
+
+async function handleReviewQueuePatch(req, res) {
+  const { id, status, resolvedCatalogId } = req.body;
+  if (!id || !status) return res.status(400).json({ error: 'id and status are required' });
+  if (!['pending', 'resolved', 'dismissed'].includes(status)) {
+    return res.status(400).json({ error: "status must be 'pending', 'resolved', or 'dismissed'" });
+  }
+
+  const row = {
+    status,
+    resolved_catalog_id: resolvedCatalogId || null,
+    resolved_at: status === 'pending' ? null : new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('manifest_review_queue')
+    .update(row)
+    .eq('id', id)
+    .select();
+  if (error) throw error;
+  res.status(200).json(data[0]);
+}
+
 module.exports = async (req, res) => {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   try {
+    if (req.query.action === 'review-queue') {
+      if (req.method === 'GET') return await handleReviewQueueGet(req, res);
+      if (req.method === 'POST') return await handleReviewQueuePost(req, res);
+      if (req.method === 'PATCH') return await handleReviewQueuePatch(req, res);
+      return res.status(405).json({ error: 'GET, POST, or PATCH only' });
+    }
+
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
     if (req.query.action === 'extract-manifest') {
       return await handleExtractManifest(req, res);
     }

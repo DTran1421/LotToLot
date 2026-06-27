@@ -42,6 +42,29 @@
   .approve-cell button{padding:5px 10px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:4px;}
   .approve-cell button:disabled{opacity:.5;}
   .approve-msg{font-size:11px;color:var(--muted);margin-top:3px;max-width:160px;}
+  .pill.resolved{background:var(--good-bg);color:var(--good);}
+  .pill.dismissed{background:var(--neutral-bg);color:var(--muted);}
+  .review-row{border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;}
+  .review-row-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
+  .review-extracted{font-size:13px;color:var(--ink);}
+  .review-extracted .small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;}
+  .review-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;}
+  .review-grid label{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+  .review-grid input,.review-grid select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px;}
+  .review-new-item-box{border:1px dashed var(--line);border-radius:6px;padding:10px;margin-bottom:10px;background:#fafbfc;}
+  .review-new-item-box .review-grid{margin-bottom:0;}
+  .review-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .review-actions button{padding:8px 14px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--navy);}
+  .review-actions button.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .review-actions button.danger{color:var(--bad);border-color:#e3b3af;}
+  .review-actions button:disabled{opacity:.5;cursor:default;}
+  .review-msg{font-size:12px;color:var(--muted);margin-top:8px;}
+  .review-msg.err{color:var(--bad);}
+  .review-msg.ok{color:var(--good);}
+
+  @media (max-width: 768px){
+    .review-grid{grid-template-columns:1fr;}
+  }
 
   @media (max-width: 768px){
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -73,7 +96,7 @@
   <div class="masthead">
     <div>
       <h1>Lot Tracking &mdash; Browse</h1>
-      <p>Catalog, Reagent Master, Receiving Log, and full Lot-to-Lot History. Approve pending verifications inline.</p>
+      <p>Catalog, Reagent Master, Receiving Log, full Lot-to-Lot History, and manifest items Needs Review. Approve pending verifications inline.</p>
     </div>
   </div>
   <div class="card">
@@ -82,19 +105,39 @@
       <div class="tab" data-table="lot_to_lot_reports">Lot-to-Lot History</div>
       <div class="tab" data-table="receiving_log">Receiving Log</div>
       <div class="tab" data-table="catalog">Catalog</div>
+      <div class="tab" data-table="needs_review">Needs Review</div>
     </div>
-    <div class="toolbar">
+    <div class="toolbar" id="genericToolbar">
       <input type="text" id="search" placeholder="Filter rows...">
       <select id="filterInstrument"><option value="">All instruments</option></select>
       <select id="filterItem"><option value="">All items</option></select>
       <div class="count" id="count"></div>
     </div>
-    <div class="table-scroll">
+    <div class="table-scroll" id="genericTableScroll">
       <table id="dataTable">
         <thead id="tableHead"></thead>
         <tbody id="tableBody"></tbody>
       </table>
       <div class="empty" id="empty" style="display:none;">No rows.</div>
+    </div>
+
+    <div id="needsReviewView" style="display:none;">
+      <div class="toolbar">
+        <select id="reviewStatusFilter">
+          <option value="pending">Pending</option>
+          <option value="resolved">Resolved</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="">All</option>
+        </select>
+        <div class="count" id="reviewCount"></div>
+      </div>
+      <div id="reviewRows"></div>
+      <div class="empty" id="reviewEmpty" style="display:none;">No items match.</div>
+      <datalist id="reviewInstrumentList"></datalist>
+      <datalist id="reviewCategoryList">
+        <option value="Reagent"><option value="Calibrator"><option value="Control">
+        <option value="Chemical"><option value="Equipment"><option value="Misc"><option value="Linearity">
+      </datalist>
     </div>
   </div>
 </div>
@@ -390,8 +433,21 @@ function approve(row, tr){
   });
 }
 
+var reviewQueueRows = [];
+var reviewCatalog = [];
+
 function load(table){
   currentTable = table;
+  if(table === 'needs_review'){
+    document.getElementById('genericToolbar').style.display = 'none';
+    document.getElementById('genericTableScroll').style.display = 'none';
+    document.getElementById('needsReviewView').style.display = 'block';
+    loadNeedsReview();
+    return;
+  }
+  document.getElementById('genericToolbar').style.display = 'flex';
+  document.getElementById('genericTableScroll').style.display = 'block';
+  document.getElementById('needsReviewView').style.display = 'none';
   document.getElementById('tableBody').innerHTML = '<tr><td>Loading...</td></tr>';
   fetch('/api/browse?table=' + encodeURIComponent(table))
     .then(function(r){ return r.json(); })
@@ -405,6 +461,234 @@ function load(table){
       document.getElementById('tableBody').innerHTML = '<tr><td>Error: ' + escapeHtml(err.message) + '</td></tr>';
     });
 }
+
+/* ---------- Needs Review ---------- */
+
+function loadNeedsReview(){
+  document.getElementById('reviewRows').innerHTML = '<p class="small">Loading...</p>';
+  Promise.all([
+    fetch('/api/log-shipment?action=review-queue').then(function(r){ return r.json(); }),
+    reviewCatalog.length ? Promise.resolve(reviewCatalog) : fetch('/api/catalog').then(function(r){ return r.json(); })
+  ]).then(function(results){
+    var queue = results[0], catalog = results[1];
+    if(queue.error) throw new Error(queue.error);
+    reviewQueueRows = queue;
+    reviewCatalog = catalog;
+    var instruments = [...new Set(catalog.map(function(c){ return c.analyzer; }))].sort();
+    document.getElementById('reviewInstrumentList').innerHTML = instruments.map(function(i){ return '<option value="'+escapeHtml(i)+'">'; }).join('');
+    renderNeedsReview();
+  }).catch(function(err){
+    document.getElementById('reviewRows').innerHTML = '<p class="small" style="color:var(--bad);">Error: ' + escapeHtml(err.message) + '</p>';
+  });
+}
+
+function reviewCatalogOptionsHtml(selectedId){
+  var groups = {};
+  var order = [];
+  reviewCatalog.forEach(function(row){
+    if(!groups[row.analyzer]){ groups[row.analyzer] = []; order.push(row.analyzer); }
+    groups[row.analyzer].push(row);
+  });
+  order.sort();
+  var html = '<option value=""' + (!selectedId ? ' selected' : '') + '>-- choose a catalog item --</option>' +
+    '<option value="__new__"' + (selectedId === '__new__' ? ' selected' : '') + '>+ Add as new catalog item</option>';
+  order.forEach(function(instrument){
+    html += '<optgroup label="' + escapeHtml(instrument) + '">';
+    groups[instrument].forEach(function(row){
+      html += '<option value="' + row.id + '"' + (String(row.id)===String(selectedId)?' selected':'') + '>' +
+        escapeHtml(row.category) + ' \u2014 ' + escapeHtml(row.item) + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
+
+function renderNeedsReview(){
+  var statusFilter = document.getElementById('reviewStatusFilter').value;
+  var filtered = reviewQueueRows.filter(function(r){ return !statusFilter || r.status === statusFilter; });
+  document.getElementById('reviewCount').textContent = filtered.length + ' item' + (filtered.length === 1 ? '' : 's');
+  document.getElementById('reviewEmpty').style.display = filtered.length === 0 ? 'block' : 'none';
+
+  document.getElementById('reviewRows').innerHTML = filtered.map(function(row){
+    var ex = row.extracted || {};
+    var summary = [ex.itemDescription, ex.referenceNumber ? ('Ref: ' + ex.referenceNumber) : null].filter(Boolean).join(' \u00b7 ') || '(no description extracted)';
+    var pillCls = row.status === 'resolved' ? 'resolved' : (row.status === 'dismissed' ? 'dismissed' : 'pending');
+    var isPending = row.status === 'pending';
+
+    var resolveControls = '';
+    if(isPending){
+      var newItem = row._newItem || {};
+      resolveControls =
+        '<div class="review-grid">' +
+          '<div><label>Match to catalog item</label><select onchange="onReviewMatchChange(' + row.id + ', this.value)">' + reviewCatalogOptionsHtml(row._matchId) + '</select></div>' +
+          '<div><label>Lot #</label><input value="' + escapeHtml(row.lot_number||'') + '" oninput="updateReviewField(' + row.id + ',\'lot_number\',this.value)"></div>' +
+          '<div><label>Quantity</label><input type="number" min="0" step="1" value="' + escapeHtml(row.quantity||'') + '" oninput="updateReviewField(' + row.id + ',\'quantity\',this.value)"></div>' +
+          '<div><label>Expiration date</label><input type="date" value="' + escapeHtml(row.expiration_date||'') + '" oninput="updateReviewField(' + row.id + ',\'expiration_date\',this.value)"></div>' +
+        '</div>' +
+        (row._matchId === '__new__' ?
+          '<div class="review-new-item-box"><div class="review-grid">' +
+            '<div><label>Instrument</label><input list="reviewInstrumentList" value="' + escapeHtml(newItem.analyzer||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'analyzer\',this.value)"></div>' +
+            '<div><label>Material type</label><input list="reviewCategoryList" value="' + escapeHtml(newItem.category||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'category\',this.value)"></div>' +
+            '<div><label>Item name</label><input value="' + escapeHtml(newItem.item||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'item\',this.value)"></div>' +
+            '<div><label>Manufacturer name</label><input value="' + escapeHtml(newItem.manufacturer_name||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'manufacturer_name\',this.value)"></div>' +
+            '<div><label>Manufacturer ref #</label><input value="' + escapeHtml(newItem.manufacturer_ref||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'manufacturer_ref\',this.value)"></div>' +
+            '<div><label>Pack/unit size</label><input value="' + escapeHtml(newItem.pack_size||'') + '" oninput="updateReviewNewItem(' + row.id + ',\'pack_size\',this.value)"></div>' +
+          '</div></div>' : '') +
+        '<div class="review-actions">' +
+          '<button class="primary" onclick="resolveReviewRow(' + row.id + ')">Resolve &amp; Log Shipment</button>' +
+          '<button class="danger" onclick="dismissReviewRow(' + row.id + ')">Dismiss</button>' +
+        '</div>' +
+        '<div class="review-msg" id="reviewMsg-' + row.id + '"></div>';
+    } else {
+      resolveControls = '<p class="small">' +
+        (row.status === 'resolved' ? 'Resolved' : 'Dismissed') +
+        (row.resolved_at ? ' on ' + new Date(row.resolved_at).toLocaleString() : '') + '.' +
+        '</p>' +
+        '<div class="review-actions"><button onclick="reopenReviewRow(' + row.id + ')">Reopen as Pending</button></div>';
+    }
+
+    return '<div class="review-row">' +
+      '<div class="review-row-header">' +
+        '<div class="review-extracted"><strong>' + escapeHtml(summary) + '</strong>' +
+          '<span class="small">Queued ' + new Date(row.created_at).toLocaleString() + (row.received_by ? ' by ' + escapeHtml(row.received_by) : '') + '</span>' +
+        '</div>' +
+        '<span class="pill ' + pillCls + '">' + escapeHtml(row.status) + '</span>' +
+      '</div>' +
+      resolveControls +
+    '</div>';
+  }).join('');
+}
+
+function findReviewRow(id){
+  return reviewQueueRows.find(function(r){ return String(r.id) === String(id); });
+}
+
+function updateReviewField(id, field, value){
+  var row = findReviewRow(id);
+  if(row) row[field] = value;
+}
+
+function onReviewMatchChange(id, value){
+  var row = findReviewRow(id);
+  if(!row) return;
+  row._matchId = value;
+  if(value === '__new__' && !row._newItem){
+    var ex = row.extracted || {};
+    row._newItem = {
+      analyzer: '', category: '',
+      item: ex.itemDescription || '',
+      manufacturer_name: '',
+      manufacturer_ref: ex.referenceNumber || '',
+      pack_size: ''
+    };
+  }
+  renderNeedsReview();
+}
+
+function updateReviewNewItem(id, field, value){
+  var row = findReviewRow(id);
+  if(!row) return;
+  if(!row._newItem) row._newItem = {};
+  row._newItem[field] = value;
+}
+
+function setReviewMsg(id, msg, cls){
+  var el = document.getElementById('reviewMsg-' + id);
+  if(!el) return;
+  el.textContent = msg;
+  el.className = 'review-msg' + (cls ? ' ' + cls : '');
+}
+
+function resolveReviewRow(id){
+  var row = findReviewRow(id);
+  if(!row) return;
+  if(!row.lot_number){ setReviewMsg(id, 'Enter a lot number first.', 'err'); return; }
+  if(!row._matchId){ setReviewMsg(id, 'Match to an existing catalog item or choose "+ Add as new catalog item" first.', 'err'); return; }
+
+  setReviewMsg(id, 'Working...');
+
+  function logAgainst(catalogRow){
+    return fetch('/api/log-shipment', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        instrument: catalogRow.analyzer,
+        category: catalogRow.category,
+        item: catalogRow.item,
+        manufacturerRef: catalogRow.manufacturer_ref,
+        mckessonRef: catalogRow.mckesson_ref,
+        lotNumber: row.lot_number,
+        quantity: row.quantity === '' || row.quantity == null ? null : Number(row.quantity),
+        expirationDate: row.expiration_date || '',
+        receivedBy: row.received_by || '',
+        comments: 'Resolved from Needs Review queue'
+      })
+    }).then(function(r){ return r.json(); }).then(function(res){
+      if(res.error) throw new Error(res.error);
+      return fetch('/api/log-shipment?action=review-queue', {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id: row.id, status: 'resolved', resolvedCatalogId: catalogRow.id })
+      }).then(function(r){ return r.json(); });
+    });
+  }
+
+  var chain;
+  if(row._matchId === '__new__'){
+    var ni = row._newItem || {};
+    if(!ni.analyzer || !ni.category || !ni.item){
+      setReviewMsg(id, 'Fill in Instrument, Material type, and Item name first.', 'err');
+      return;
+    }
+    chain = fetch('/api/catalog', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        analyzer: ni.analyzer, category: ni.category, item: ni.item,
+        manufacturer_name: ni.manufacturer_name || null,
+        manufacturer_ref: ni.manufacturer_ref || null,
+        pack_size: ni.pack_size || null
+      })
+    }).then(function(r){ return r.json(); }).then(function(newCatalogRow){
+      if(newCatalogRow.error) throw new Error(newCatalogRow.error);
+      reviewCatalog.push(newCatalogRow);
+      return logAgainst(newCatalogRow);
+    });
+  } else {
+    var catalogRow = reviewCatalog.find(function(c){ return String(c.id) === String(row._matchId); });
+    if(!catalogRow){ setReviewMsg(id, 'Could not find that catalog item -- refresh and try again.', 'err'); return; }
+    chain = logAgainst(catalogRow);
+  }
+
+  chain.then(function(){
+    loadNeedsReview();
+  }).catch(function(err){
+    setReviewMsg(id, 'Error: ' + err.message, 'err');
+  });
+}
+
+function dismissReviewRow(id){
+  if(!confirm('Dismiss this item without logging a shipment? It stays in the Dismissed tab if you need to revisit it.')) return;
+  fetch('/api/log-shipment?action=review-queue', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id: id, status: 'dismissed' })
+  }).then(function(r){ return r.json(); }).then(function(){
+    loadNeedsReview();
+  });
+}
+
+function reopenReviewRow(id){
+  fetch('/api/log-shipment?action=review-queue', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id: id, status: 'pending' })
+  }).then(function(r){ return r.json(); }).then(function(){
+    loadNeedsReview();
+  });
+}
+
+document.getElementById('reviewStatusFilter').addEventListener('change', renderNeedsReview);
 
 document.querySelectorAll('.tab').forEach(function(tab){
   tab.addEventListener('click', function(){
