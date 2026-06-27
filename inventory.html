@@ -152,7 +152,7 @@
     </div>
     <div class="table-scroll">
       <table class="responsive">
-        <thead><tr><th>Material type</th><th>Item</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
+        <thead><tr><th>Material type</th><th>Item</th><th>Storage Location</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
         <tbody id="parBody"></tbody>
       </table>
     </div>
@@ -192,11 +192,12 @@ var sortColumn = 'category';
 var sortDirection = 'asc';
 var collapsedGroups = new Set(); // analyzer names currently collapsed, Inventory tab
 var collapsedParGroups = new Set(); // analyzer names currently collapsed, Par Levels tab
-var TOTAL_COLS = 12; // Order?, category, item, mfr ref, mckesson ref, pack size, in stock, par, status, order freq, last ordered, reviewed
+var TOTAL_COLS = 13; // Order?, category, item, storage location, mfr ref, mckesson ref, pack size, in stock, par, status, order freq, last ordered, reviewed
 
 var SORT_COLUMNS = [
   { key: 'category', label: 'Material type' },
   { key: 'item', label: 'Item' },
+  { key: 'storage_location', label: 'Storage Location' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
   { key: 'mckesson_ref', label: 'McKesson ref #' },
   { key: 'pack_size', label: 'Pack/unit size' },
@@ -295,8 +296,8 @@ function renderHead(){
   // Columns up through Par, then an explicit (non-sortable) Status column for
   // the OK/LOW pill, then the remaining sortable columns. This has to match
   // the <td> order in render() exactly.
-  const beforeStatus = SORT_COLUMNS.slice(0, 7).map(thFor).join('');
-  const afterStatus = SORT_COLUMNS.slice(7).map(thFor).join('');
+  const beforeStatus = SORT_COLUMNS.slice(0, 8).map(thFor).join('');
+  const afterStatus = SORT_COLUMNS.slice(8).map(thFor).join('');
   head.innerHTML = '<tr><th style="width:30px;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
 
   head.querySelectorAll('th.sortable').forEach(function(th){
@@ -323,7 +324,7 @@ function render(){
     if(lowOnly && !isLowStock(r)) return false;
     if(unreviewedOnly && r.last_reviewed_at) return false;
     if(!filterText) return true;
-    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'')).toLowerCase();
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_location||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
 
@@ -355,6 +356,7 @@ function render(){
           '<td data-label="Order?"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleSelect(' + r.catalog_id + ', this.checked)"></td>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
+          '<td class="small" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small col-mobile-hide" data-label="Mfr ref #">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
           '<td class="small col-mobile-hide" data-label="McKesson ref #">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
           '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
@@ -764,7 +766,7 @@ function renderParView(){
   const filterText = document.getElementById('parSearch').value.trim().toLowerCase();
   const filtered = allRows.filter(function(r){
     if(!filterText) return true;
-    return (r.analyzer + ' ' + r.item).toLowerCase().indexOf(filterText) !== -1;
+    return (r.analyzer + ' ' + r.item + ' ' + (r.storage_location||'')).toLowerCase().indexOf(filterText) !== -1;
   });
   const groups = groupByAnalyzer(filtered);
   const groupNames = Object.keys(groups).sort(function(a, b){ return a.localeCompare(b); });
@@ -774,7 +776,7 @@ function renderParView(){
     const rows = sortRows(groups[name]);
     const collapsed = collapsedParGroups.has(name);
     html += '<tr class="group-header" data-group="' + escapeHtml(name) + '">' +
-      '<td colspan="4">' +
+      '<td colspan="5">' +
         '<span class="group-chevron">' + (collapsed ? '\u25B8' : '\u25BE') + '</span>' +
         '<span class="group-name">' + escapeHtml(name) + '</span>' +
         '<span class="group-meta">' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + '</span>' +
@@ -785,6 +787,7 @@ function renderParView(){
         return '<tr>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
+          '<td class="small" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
           '<td data-label="Par level">' + renderStepper(r.catalog_id, 'par_level', r.par_level == null ? 0 : r.par_level) + '</td>' +
         '</tr>';

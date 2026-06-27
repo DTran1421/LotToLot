@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
     if (req.method === 'GET') {
       const { data: rows, error } = await supabase
         .from('inventory')
-        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size)')
+        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size, storage_location)')
         .order('catalog_id');
       if (error) throw error;
 
@@ -49,6 +49,7 @@ module.exports = async (req, res) => {
         mckesson_ref: r.catalog ? r.catalog.mckesson_ref : null,
         mckesson_url: r.catalog ? r.catalog.mckesson_url : null,
         pack_size: r.catalog ? r.catalog.pack_size : null,
+        storage_location: r.catalog ? r.catalog.storage_location : null,
         in_stock: r.in_stock,
         par_level: r.par_level,
         last_stock_update_at: r.last_stock_update_at,
