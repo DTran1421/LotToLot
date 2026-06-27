@@ -25,11 +25,56 @@
   label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;}
   .count{font-size:12px;color:var(--muted);margin-left:auto;}
   .table-scroll{overflow-x:auto;}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;}
-  th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;white-space:nowrap;}
-  td.wrap-cell{white-space:normal;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;}
+  td{word-break:break-word;overflow-wrap:break-word;}
+  th{word-break:normal;overflow-wrap:break-word;}
   @media (min-width:781px){
-    td.wrap-cell{max-width:220px;}
+  /* #dataTable (Inventory tab): Order?, Material type, Item, Storage Location, Mfr ref#, McKesson ref#, Pack/unit size, In stock, Par, Status, Order freq, Last ordered, Reviewed */
+  #dataTable th:nth-child(1),#dataTable td:nth-child(1){width:30px;}
+  #dataTable th:nth-child(2),#dataTable td:nth-child(2){width:7%;}
+  #dataTable th:nth-child(3),#dataTable td:nth-child(3){width:13%;}
+  #dataTable th:nth-child(4),#dataTable td:nth-child(4){width:15%;}
+  #dataTable th:nth-child(5),#dataTable td:nth-child(5){width:7%;}
+  #dataTable th:nth-child(6),#dataTable td:nth-child(6){width:8%;}
+  #dataTable th:nth-child(7),#dataTable td:nth-child(7){width:7%;}
+  #dataTable th:nth-child(8),#dataTable td:nth-child(8){width:6%;}
+  #dataTable th:nth-child(9),#dataTable td:nth-child(9){width:6%;}
+  #dataTable th:nth-child(10),#dataTable td:nth-child(10){width:7%;}
+  #dataTable th:nth-child(11),#dataTable td:nth-child(11){width:7%;}
+  #dataTable th:nth-child(12),#dataTable td:nth-child(12){width:8%;}
+  #dataTable th:nth-child(13),#dataTable td:nth-child(13){width:8%;}
+  /* #parTable: Material type, Item, Storage Location, Pack/unit size, Par level */
+  #parTable th:nth-child(1),#parTable td:nth-child(1){width:16%;}
+  #parTable th:nth-child(2),#parTable td:nth-child(2){width:28%;}
+  #parTable th:nth-child(3),#parTable td:nth-child(3){width:28%;}
+  #parTable th:nth-child(4),#parTable td:nth-child(4){width:16%;}
+  #parTable th:nth-child(5),#parTable td:nth-child(5){width:12%;}
+  /* #historyTable: Date, Vendor, PO #, Items, Notes, Sent To, Sent At, PDF */
+  #historyTable th:nth-child(1),#historyTable td:nth-child(1){width:11%;}
+  #historyTable th:nth-child(2),#historyTable td:nth-child(2){width:11%;}
+  #historyTable th:nth-child(3),#historyTable td:nth-child(3){width:11%;}
+  #historyTable th:nth-child(4),#historyTable td:nth-child(4){width:8%;}
+  #historyTable th:nth-child(5),#historyTable td:nth-child(5){width:24%;}
+  #historyTable th:nth-child(6),#historyTable td:nth-child(6){width:17%;}
+  #historyTable th:nth-child(7),#historyTable td:nth-child(7){width:11%;}
+  #historyTable th:nth-child(8),#historyTable td:nth-child(8){width:7%;}
+  /* .po-table (price-required vendor PO): Item, Mfr ref#, Pack/unit size, In stock/Par, Qty, Unit price, Line total */
+  .po-table th:nth-child(1),.po-table td:nth-child(1){width:24%;}
+  .po-table th:nth-child(2),.po-table td:nth-child(2){width:14%;}
+  .po-table th:nth-child(3),.po-table td:nth-child(3){width:16%;}
+  .po-table th:nth-child(4),.po-table td:nth-child(4){width:13%;}
+  .po-table th:nth-child(5),.po-table td:nth-child(5){width:11%;}
+  .po-table th:nth-child(6),.po-table td:nth-child(6){width:11%;}
+  .po-table th:nth-child(7),.po-table td:nth-child(7){width:11%;}
+  /* .std-table (McKesson-style modal table): Instrument, Item, Mfr ref#, McKesson ref#, Pack/unit size, In stock/Par, Qty */
+  .std-table th:nth-child(1),.std-table td:nth-child(1){width:18%;}
+  .std-table th:nth-child(2),.std-table td:nth-child(2){width:20%;}
+  .std-table th:nth-child(3),.std-table td:nth-child(3){width:13%;}
+  .std-table th:nth-child(4),.std-table td:nth-child(4){width:14%;}
+  .std-table th:nth-child(5),.std-table td:nth-child(5){width:14%;}
+  .std-table th:nth-child(6),.std-table td:nth-child(6){width:11%;}
+  .std-table th:nth-child(7),.std-table td:nth-child(7){width:10%;}
   }
   th{font-size:10px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;background:#fff;}
   th.sortable{cursor:pointer;user-select:none;}
@@ -156,7 +201,7 @@
       <div class="small">Set par levels here -- In Stock isn't shown on this tab on purpose, so there's no risk of mixing the two fields up.</div>
     </div>
     <div class="table-scroll">
-      <table class="responsive">
+      <table class="responsive" id="parTable">
         <thead><tr><th>Material type</th><th>Item</th><th>Storage Location</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
         <tbody id="parBody"></tbody>
       </table>
@@ -168,7 +213,7 @@
       <div class="small">Past order reports, most recent first.</div>
     </div>
     <div class="table-scroll">
-      <table class="responsive">
+      <table class="responsive" id="historyTable">
         <thead><tr><th>Date</th><th>Vendor</th><th>PO #</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -976,6 +1021,7 @@ function renderVendorSection(vendorName){
       '</tr>';
     }).join('');
     headHtml = '<thead><tr><th>Item</th><th>Mfr ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th><th>Unit price</th><th>Line total</th></tr></thead>';
+    var tableClass = 'po-table';
   } else {
     rowsHtml = ids.map(function(id){
       const sel = selected[id];
@@ -991,6 +1037,7 @@ function renderVendorSection(vendorName){
       '</tr>';
     }).join('');
     headHtml = '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>';
+    var tableClass = 'std-table';
   }
 
   const missingPriceCount = priceRequired ? ids.filter(function(id){ return selected[id].row.unit_price == null; }).length : 0;
@@ -1009,7 +1056,7 @@ function renderVendorSection(vendorName){
   return '<div class="card" id="vendorSection__' + key + '" style="margin-top:14px;">' +
     '<h2>' + escapeHtml(vendorName) + (priceRequired ? ' &mdash; Purchase Order' : '') + '</h2>' +
     addressBlock +
-    '<div class="table-scroll" style="margin-top:10px;"><table>' + headHtml + '<tbody>' + rowsHtml + '</tbody></table></div>' +
+    '<div class="table-scroll" style="margin-top:10px;"><table class="' + tableClass + '">' + headHtml + '<tbody>' + rowsHtml + '</tbody></table></div>' +
     totalLine +
     missingWarning +
     '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Notes (optional)</label>' +

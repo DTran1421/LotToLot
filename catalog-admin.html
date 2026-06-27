@@ -26,10 +26,24 @@
   button.secondary{background:#fff;color:var(--navy);border:1px solid var(--line);}
   button.danger{background:#fff;color:var(--bad);border:1px solid #e3b3af;}
   .row-actions{display:flex;gap:8px;margin-top:12px;}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
+  td{word-break:break-word;overflow-wrap:break-word;}
+  th{word-break:normal;overflow-wrap:break-word;}
+  /* Instrument, Material type, Item, Mfr name, Mfr ref#, McKesson ref#, Pack/unit size, Storage Temp, Storage Location, Vendor, Actions */
+  th:nth-child(1),td:nth-child(1){width:13%;}
+  th:nth-child(2),td:nth-child(2){width:7%;}
+  th:nth-child(3),td:nth-child(3){width:12%;}
+  th:nth-child(4),td:nth-child(4){width:8%;}
+  th:nth-child(5),td:nth-child(5){width:8%;}
+  th:nth-child(6),td:nth-child(6){width:8%;}
+  th:nth-child(7),td:nth-child(7){width:8%;}
+  th:nth-child(8),td:nth-child(8){width:9%;}
+  th:nth-child(9),td:nth-child(9){width:13%;}
+  th:nth-child(10),td:nth-child(10){width:6%;}
+  th:nth-child(11),td:nth-child(11){width:8%;}
   th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
   th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
-  th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+  th.sortable{cursor:pointer;user-select:none;}
   th.sortable:hover{color:var(--navy);}
   th.sortable .arrow{display:inline-block;width:10px;font-size:9px;opacity:.4;}
   th.sortable.active .arrow{opacity:1;color:var(--navy);}
