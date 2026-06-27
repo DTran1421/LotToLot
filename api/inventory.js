@@ -242,6 +242,7 @@ module.exports = async (req, res) => {
       try {
         await transporter.sendMail({
           from: 'Altru Diagnostics Lot Tracking <' + process.env.GMAIL_USER + '>',
+          replyTo: 'David Tran <david.tran@medscanlab.com>',
           to: to,
           cc: cc && cc.trim() ? cc.trim() : undefined,
           subject: subject || 'Altru Diagnostics Order',
