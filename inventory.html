@@ -31,7 +31,7 @@
   th{word-break:normal;overflow-wrap:break-word;}
   @media (min-width:781px){
   /* #dataTable (Inventory tab): Order?, Material type, Item, Storage Location, Mfr ref#, McKesson ref#, Pack/unit size, In stock, Par, Status, Order freq, Last ordered, Reviewed */
-  #dataTable th:nth-child(1),#dataTable td:nth-child(1){width:30px;}
+  #dataTable th:nth-child(1),#dataTable td:nth-child(1){width:54px;}
   #dataTable th:nth-child(2),#dataTable td:nth-child(2){width:7%;}
   #dataTable th:nth-child(3),#dataTable td:nth-child(3){width:13%;}
   #dataTable th:nth-child(4),#dataTable td:nth-child(4){width:15%;}
@@ -356,7 +356,7 @@ function renderHead(){
   // the <td> order in render() exactly.
   const beforeStatus = SORT_COLUMNS.slice(0, 8).map(thFor).join('');
   const afterStatus = SORT_COLUMNS.slice(8).map(thFor).join('');
-  head.innerHTML = '<tr><th style="width:30px;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
+  head.innerHTML = '<tr><th style="width:54px;white-space:nowrap;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
 
   head.querySelectorAll('th.sortable').forEach(function(th){
     th.addEventListener('click', function(){
