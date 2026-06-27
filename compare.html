@@ -114,6 +114,7 @@
   }
   .tab.active{color:var(--navy);border-bottom-color:var(--navy);}
   table{width:100%;border-collapse:collapse;font-size:13px;}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;}
   th{background:#f6f8fa;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;}
   td input{border:none;padding:3px 4px;font-size:13px;width:100%;background:transparent;}
@@ -515,10 +516,12 @@ function renderAnalyteCard(c){
       ${extractionPanel}
     `}
 
-    <table style="margin-top:14px;">
-      <thead><tr><th>Sample ID</th><th>Old lot result</th><th>New lot result</th><th>Diff</th><th>% diff</th><th class="no-print"></th></tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="6" class="small" style="text-align:center;color:var(--muted);">No rows yet &mdash; parse pasted data, extract from a printout, or add a row manually.</td></tr>`}</tbody>
-    </table>
+    <div class="table-scroll">
+      <table style="margin-top:14px;">
+        <thead><tr><th>Sample ID</th><th>Old lot result</th><th>New lot result</th><th>Diff</th><th>% diff</th><th class="no-print"></th></tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="6" class="small" style="text-align:center;color:var(--muted);">No rows yet &mdash; parse pasted data, extract from a printout, or add a row manually.</td></tr>`}</tbody>
+      </table>
+    </div>
     <div class="row-actions">
       <button class="btn secondary" data-action="add-row" data-card="${c.id}">+ Add row manually</button>
       <button class="btn" data-action="calc-card" data-card="${c.id}">Calculate</button>
