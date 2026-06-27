@@ -34,6 +34,7 @@
   .toolbar{display:flex;gap:10px;margin-bottom:10px;}
   .toolbar input{width:280px;}
   .actions-cell button{padding:4px 9px;font-size:11px;}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 </style>
 </head>
 <body>
@@ -73,10 +74,12 @@
     <div class="toolbar">
       <input type="text" id="search" placeholder="Filter by instrument, material type, item, or reference #...">
     </div>
-    <table>
-      <thead><tr id="tableHead"></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
