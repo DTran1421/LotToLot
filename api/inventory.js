@@ -40,27 +40,34 @@ module.exports = async (req, res) => {
         freqMap[r.catalog_id] = (freqMap[r.catalog_id] || 0) + 1;
       }
 
-      const result = rows.map((r) => ({
-        catalog_id: r.catalog_id,
-        analyzer: r.catalog ? r.catalog.analyzer : null,
-        category: r.catalog ? r.catalog.category : null,
-        item: r.catalog ? r.catalog.item : null,
-        manufacturer_name: r.catalog ? r.catalog.manufacturer_name : null,
-        manufacturer_ref: r.catalog ? r.catalog.manufacturer_ref : null,
-        mckesson_ref: r.catalog ? r.catalog.mckesson_ref : null,
-        mckesson_url: r.catalog ? r.catalog.mckesson_url : null,
-        pack_size: r.catalog ? r.catalog.pack_size : null,
-        storage_location: r.catalog ? r.catalog.storage_location : null,
-        vendor: r.catalog ? r.catalog.vendor : null,
-        unit_price: r.catalog && r.catalog.vendor_pricing && r.catalog.vendor_pricing.length ? r.catalog.vendor_pricing[0].unit_price : null,
-        in_stock: r.in_stock,
-        par_level: r.par_level,
-        last_stock_update_at: r.last_stock_update_at,
-        last_ordered_at: r.last_ordered_at,
-        last_reviewed_at: r.last_reviewed_at,
-        order_count: r.order_count,
-        order_frequency: freqMap[r.catalog_id] || 0,
-      }));
+      const result = rows.map((r) => {
+        // vendor_pricing.catalog_id is UNIQUE, so PostgREST treats this as
+        // a 1-to-1 relationship and returns a single object -- not an
+        // array like a normal one-to-many embed. Handle both shapes.
+        const vp = r.catalog ? r.catalog.vendor_pricing : null;
+        const unitPrice = Array.isArray(vp) ? (vp[0] ? vp[0].unit_price : null) : (vp ? vp.unit_price : null);
+        return {
+          catalog_id: r.catalog_id,
+          analyzer: r.catalog ? r.catalog.analyzer : null,
+          category: r.catalog ? r.catalog.category : null,
+          item: r.catalog ? r.catalog.item : null,
+          manufacturer_name: r.catalog ? r.catalog.manufacturer_name : null,
+          manufacturer_ref: r.catalog ? r.catalog.manufacturer_ref : null,
+          mckesson_ref: r.catalog ? r.catalog.mckesson_ref : null,
+          mckesson_url: r.catalog ? r.catalog.mckesson_url : null,
+          pack_size: r.catalog ? r.catalog.pack_size : null,
+          storage_location: r.catalog ? r.catalog.storage_location : null,
+          vendor: r.catalog ? r.catalog.vendor : null,
+          unit_price: unitPrice,
+          in_stock: r.in_stock,
+          par_level: r.par_level,
+          last_stock_update_at: r.last_stock_update_at,
+          last_ordered_at: r.last_ordered_at,
+          last_reviewed_at: r.last_reviewed_at,
+          order_count: r.order_count,
+          order_frequency: freqMap[r.catalog_id] || 0,
+        };
+      });
 
       return res.status(200).json(result);
     }

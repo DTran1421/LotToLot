@@ -77,16 +77,23 @@ module.exports = async (req, res) => {
           .order('item');
         if (error) throw error;
 
-        const result = data.map((r) => ({
-          catalog_id: r.id,
-          analyzer: r.analyzer,
-          category: r.category,
-          item: r.item,
-          vendor: r.vendor,
-          manufacturer_ref: r.manufacturer_ref,
-          pack_size: r.pack_size,
-          unit_price: r.vendor_pricing && r.vendor_pricing.length ? r.vendor_pricing[0].unit_price : null,
-        }));
+        const result = data.map((r) => {
+          // vendor_pricing.catalog_id is UNIQUE, so PostgREST treats this as
+          // a 1-to-1 relationship and returns a single object -- not an
+          // array like a normal one-to-many embed. Handle both shapes.
+          const vp = r.vendor_pricing;
+          const unitPrice = Array.isArray(vp) ? (vp[0] ? vp[0].unit_price : null) : (vp ? vp.unit_price : null);
+          return {
+            catalog_id: r.id,
+            analyzer: r.analyzer,
+            category: r.category,
+            item: r.item,
+            vendor: r.vendor,
+            manufacturer_ref: r.manufacturer_ref,
+            pack_size: r.pack_size,
+            unit_price: unitPrice,
+          };
+        });
         return res.status(200).json(result);
       }
 
