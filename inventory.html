@@ -882,11 +882,9 @@ document.getElementById('unreviewedOnly').addEventListener('change', function(){
 //   - anything already selected stays selected, with its row data
 //     refreshed to current numbers -- a manual addition/keep is never
 //     silently dropped just because it crossed back above the threshold
-function refreshAndOpenOrderModal(btn){
-  if(btn) btn.disabled = true;
-  fetch('/api/inventory').then(function(r){ return r.json(); }).then(function(data){
-    if(btn) btn.disabled = false;
-    if(data.error){ alert('Could not refresh data: ' + data.error); return; }
+function reloadInventorySnapshot(){
+  return fetch('/api/inventory').then(function(r){ return r.json(); }).then(function(data){
+    if(data.error) throw new Error(data.error);
     allRows = data;
     allRows.forEach(function(r){
       const isSelected = !!selected[r.catalog_id];
@@ -897,6 +895,13 @@ function refreshAndOpenOrderModal(btn){
         selected[r.catalog_id].row = r;
       }
     });
+  });
+}
+
+function refreshAndOpenOrderModal(btn){
+  if(btn) btn.disabled = true;
+  reloadInventorySnapshot().then(function(){
+    if(btn) btn.disabled = false;
     render();
     openOrderModal();
   }).catch(function(err){
@@ -1295,7 +1300,7 @@ function blobToBase64(blob){
 function clearVendorSelection(vendorName){
   const groups = selectedByVendor();
   (groups[vendorName] || []).forEach(function(id){ delete selected[id]; });
-  render();
+  reloadInventorySnapshot().then(render).catch(function(){ render(); }); // fall back to a plain re-render if the refresh itself fails -- don't leave the UI stuck
   const key = vKey(vendorName);
   const section = document.getElementById('vendorSection__' + key);
   if(section) section.remove();
