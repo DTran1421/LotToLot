@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Tracking - Vendors</title>
+<style>
+  :root{--navy:#0f2a47;--bg:#f4f6f8;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--good:#1b7a4d;--good-bg:#e7f5ee;--bad:#b3261e;--bad-bg:#fcebea;--neutral-bg:#eef2f6;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px;}
+  .masthead{background:var(--navy);color:#fff;border-radius:10px;padding:18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .masthead h1{margin:0 0 4px;font-size:18px;}
+  .masthead p{margin:0;font-size:12.5px;color:#c9d8e6;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--navy);}
+  .grid{display:grid;gap:10px;}
+  .grid.cols-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+  .grid.cols-2{grid-template-columns:1fr 1fr;}
+  @media (max-width:780px){
+    .grid.cols-4{grid-template-columns:1fr 1fr;}
+    .grid.cols-2{grid-template-columns:1fr;}
+  }
+  label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;}
+  textarea{min-height:64px;resize:vertical;}
+  button{padding:9px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  button.secondary{background:#fff;color:var(--navy);border:1px solid var(--line);}
+  button.danger{background:#fff;color:var(--bad);border:1px solid #e3b3af;}
+  .row-actions{display:flex;gap:8px;margin-top:12px;}
+  .check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);text-transform:none;font-weight:500;}
+  .check input{width:auto;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
+  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
+  .small{font-size:12px;color:var(--muted);}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;}
+  .toolbar input{width:280px;}
+  .actions-cell button{padding:4px 9px;font-size:11px;}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+  .tab{padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .price-input{width:110px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+  .pill.req{background:var(--bad-bg);color:var(--bad);}
+  .pill.optional{background:var(--neutral-bg);color:var(--muted);}
+  .save-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:6px;opacity:0;transition:opacity .25s;}
+  .save-dot.pending{opacity:1;background:var(--muted);}
+  .save-dot.saved{opacity:1;background:var(--good);}
+  .save-dot.err{opacity:1;background:var(--bad);}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <h1>Vendors</h1>
+      <p>Vendor directory (contact info, PO address blocks, pricing requirements) and per-item pricing.</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-view="vendors">Vendor Directory</div>
+    <div class="tab" data-view="pricing">Item Pricing</div>
+  </div>
+
+  <!-- ===================== Vendor Directory ===================== -->
+  <div id="vendorsView">
+    <div class="card">
+      <h2 id="vendorFormTitle">Add new vendor</h2>
+      <input type="hidden" id="v_editId">
+      <div class="grid cols-4">
+        <div><label>Vendor name</label><input id="v_name" placeholder="e.g. Euroimmun"></div>
+        <div><label>Order email (To)</label><input id="v_order_email" placeholder="e.g. order@euroimmun.us"></div>
+        <div><label>Order email (CC)</label><input id="v_order_cc" placeholder="optional"></div>
+        <div>
+          <label>Price required on PO?</label>
+          <div class="check" style="padding-top:8px;"><input type="checkbox" id="v_price_required"> Block sending if any line item is missing a price</div>
+        </div>
+      </div>
+      <div class="grid cols-2" style="margin-top:10px;">
+        <div><label>Ship to (fixed address block)</label><textarea id="v_ship_to" placeholder="AltruDX, A MedScan Company&#10;8566 Katy Freeway Suite 121&#10;Houston, Texas 77024"></textarea></div>
+        <div><label>Bill to (fixed address block)</label><textarea id="v_bill_to" placeholder="MedScan Laboratory Inc.&#10;Attention: Julie Zielinski&#10;1502 13th Ave W Suite 201&#10;Williston, ND 58801"></textarea></div>
+      </div>
+      <div style="margin-top:10px;"><label>Notes</label><input id="v_notes" placeholder="optional"></div>
+      <div class="row-actions">
+        <button onclick="saveVendor()">Save</button>
+        <button class="secondary" onclick="resetVendorForm()">Clear / new entry</button>
+      </div>
+      <p class="small" id="vendorFormStatus" style="margin-top:8px;"></p>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Vendor</th><th>Order email</th><th>CC</th><th>Price required?</th><th>Notes</th><th>Actions</th></tr></thead>
+          <tbody id="vendorRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Item Pricing ===================== -->
+  <div id="pricingView" style="display:none;">
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="pricingSearch" placeholder="Filter by vendor, instrument, or item...">
+        <label class="check"><input type="checkbox" id="missingPriceOnly"> Show only items missing a price</label>
+        <span class="small" id="pricingStatus"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Vendor</th><th>Instrument</th><th>Material type</th><th>Item</th><th>Mfr ref #</th><th>Pack/unit size</th><th>Unit price (USD)</th></tr></thead>
+          <tbody id="pricingRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var allVendors = [];
+var allPricing = [];
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+/* ---------- Vendor Directory ---------- */
+
+function loadVendors(){
+  fetch('/api/catalog?action=vendors').then(function(r){ return r.json(); }).then(function(data){
+    allVendors = data;
+    renderVendors();
+  });
+}
+
+function renderVendors(){
+  document.getElementById('vendorRows').innerHTML = allVendors.map(function(v){
+    return '<tr>' +
+      '<td><strong>' + escapeHtml(v.name) + '</strong></td>' +
+      '<td class="small">' + escapeHtml(v.order_email||'--') + '</td>' +
+      '<td class="small">' + escapeHtml(v.order_cc||'--') + '</td>' +
+      '<td>' + (v.price_required ? '<span class="pill req">Required</span>' : '<span class="pill optional">Optional</span>') + '</td>' +
+      '<td class="small">' + escapeHtml(v.notes||'--') + '</td>' +
+      '<td class="actions-cell">' +
+        '<button class="secondary" onclick="editVendor(' + v.id + ')">Edit</button> ' +
+        '<button class="danger" onclick="deleteVendor(' + v.id + ')">Delete</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function resetVendorForm(){
+  document.getElementById('v_editId').value = '';
+  document.getElementById('vendorFormTitle').textContent = 'Add new vendor';
+  ['v_name','v_order_email','v_order_cc','v_ship_to','v_bill_to','v_notes'].forEach(function(id){
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('v_price_required').checked = false;
+  document.getElementById('vendorFormStatus').textContent = '';
+}
+
+function editVendor(id){
+  const v = allVendors.find(function(x){ return x.id === id; });
+  if(!v) return;
+  document.getElementById('v_editId').value = v.id;
+  document.getElementById('vendorFormTitle').textContent = 'Edit: ' + v.name;
+  document.getElementById('v_name').value = v.name || '';
+  document.getElementById('v_order_email').value = v.order_email || '';
+  document.getElementById('v_order_cc').value = v.order_cc || '';
+  document.getElementById('v_ship_to').value = v.ship_to || '';
+  document.getElementById('v_bill_to').value = v.bill_to || '';
+  document.getElementById('v_notes').value = v.notes || '';
+  document.getElementById('v_price_required').checked = !!v.price_required;
+  window.scrollTo(0,0);
+}
+
+function saveVendor(){
+  const statusEl = document.getElementById('vendorFormStatus');
+  const id = document.getElementById('v_editId').value;
+  const body = {
+    id: id || undefined,
+    name: document.getElementById('v_name').value,
+    order_email: document.getElementById('v_order_email').value,
+    order_cc: document.getElementById('v_order_cc').value,
+    ship_to: document.getElementById('v_ship_to').value,
+    bill_to: document.getElementById('v_bill_to').value,
+    price_required: document.getElementById('v_price_required').checked,
+    notes: document.getElementById('v_notes').value
+  };
+  statusEl.textContent = 'Saving...';
+  fetch('/api/catalog?action=vendors', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res){
+    if(res.error){ statusEl.textContent = 'Error: ' + res.error; return; }
+    statusEl.textContent = 'Saved.';
+    resetVendorForm();
+    loadVendors();
+  })
+  .catch(function(err){ statusEl.textContent = 'Error: ' + err.message; });
+}
+
+function deleteVendor(id){
+  const v = allVendors.find(function(x){ return x.id === id; });
+  if(!v) return;
+  if(!confirm('Delete vendor "' + v.name + '"? Catalog items already assigned to this vendor will keep that vendor name as plain text, but it will no longer appear in the vendor directory or pricing rules.')) return;
+  fetch('/api/catalog?action=vendors&id=' + id, { method: 'DELETE' })
+    .then(function(r){ return r.json(); })
+    .then(function(){ loadVendors(); });
+}
+
+/* ---------- Item Pricing ---------- */
+
+function loadPricing(){
+  document.getElementById('pricingStatus').textContent = 'Loading...';
+  fetch('/api/catalog?action=pricing').then(function(r){ return r.json(); }).then(function(data){
+    allPricing = data;
+    document.getElementById('pricingStatus').textContent = '';
+    renderPricing();
+  });
+}
+
+function renderPricing(){
+  const filterText = document.getElementById('pricingSearch').value.trim().toLowerCase();
+  const missingOnly = document.getElementById('missingPriceOnly').checked;
+  const filtered = allPricing.filter(function(r){
+    if(missingOnly && r.unit_price != null) return false;
+    if(!filterText) return true;
+    const haystack = (r.vendor + ' ' + r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'')).toLowerCase();
+    return haystack.indexOf(filterText) !== -1;
+  });
+
+  document.getElementById('pricingRows').innerHTML = filtered.map(function(r){
+    return '<tr data-id="' + r.catalog_id + '">' +
+      '<td><strong>' + escapeHtml(r.vendor) + '</strong></td>' +
+      '<td class="small">' + escapeHtml(r.analyzer) + '</td>' +
+      '<td class="small">' + escapeHtml(r.category) + '</td>' +
+      '<td>' + escapeHtml(r.item) + '</td>' +
+      '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
+      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
+      '<td>' +
+        '<input class="price-input" type="number" step="0.01" min="0" placeholder="0.00" value="' + (r.unit_price != null ? r.unit_price : '') + '" ' +
+          'onchange="savePrice(' + r.catalog_id + ', this.value, this)">' +
+        '<span class="save-dot" id="dot-' + r.catalog_id + '"></span>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+var priceSaveTimers = {};
+function savePrice(catalogId, value, inputEl){
+  const dot = document.getElementById('dot-' + catalogId);
+  if(priceSaveTimers[catalogId]) clearTimeout(priceSaveTimers[catalogId]);
+  if(dot){ dot.className = 'save-dot pending'; }
+  priceSaveTimers[catalogId] = setTimeout(function(){
+    fetch('/api/catalog?action=pricing', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ catalog_id: catalogId, unit_price: value === '' ? '' : Number(value) })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res.error){ if(dot){ dot.className = 'save-dot err'; } return; }
+      if(dot){ dot.className = 'save-dot saved'; }
+      const row = allPricing.find(function(x){ return x.catalog_id === catalogId; });
+      if(row) row.unit_price = value === '' ? null : Number(value);
+    })
+    .catch(function(){ if(dot){ dot.className = 'save-dot err'; } });
+  }, 350);
+}
+
+document.getElementById('pricingSearch').addEventListener('input', renderPricing);
+document.getElementById('missingPriceOnly').addEventListener('change', renderPricing);
+
+/* ---------- Tabs ---------- */
+
+document.querySelectorAll('.tab').forEach(function(tab){
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    tab.classList.add('active');
+    const view = tab.getAttribute('data-view');
+    document.getElementById('vendorsView').style.display = view === 'vendors' ? 'block' : 'none';
+    document.getElementById('pricingView').style.display = view === 'pricing' ? 'block' : 'none';
+    if(view === 'pricing' && allPricing.length === 0) loadPricing();
+  });
+});
+
+loadVendors();
+</script>
+</body>
+</html>

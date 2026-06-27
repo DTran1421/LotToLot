@@ -8,6 +8,7 @@
     { href: '/compare.html', label: 'Lot Comparison' },
     { href: '/inventory.html', label: 'Inventory & Reordering' },
     { href: '/catalog-admin.html', label: 'Catalog Admin' },
+    { href: '/vendors.html', label: 'Vendors' },
     { href: '/tea-admin.html', label: 'TEa Admin' }
   ];
 

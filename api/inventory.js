@@ -7,9 +7,10 @@ const nodemailer = require('nodemailer');
  * files) to stay under Vercel Hobby's serverless function count limit --
  * the project was already close to it before this page existed.
  *
- * GET  /api/inventory                       -> list inventory joined with catalog + order frequency
+ * GET  /api/inventory                       -> list inventory joined with catalog + vendor + unit price + order frequency
  * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
- * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump), optionally save the generated PDF to Storage and set orders.pdf_url
+ * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump); assigns a PO number for non-McKesson vendors. No PDF yet -- see attach-pdf.
+ * POST /api/inventory?action=attach-pdf     -> save the client-generated PDF (which needed the PO number from create-order) to Storage and set orders.pdf_url
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
@@ -27,7 +28,7 @@ module.exports = async (req, res) => {
     if (req.method === 'GET') {
       const { data: rows, error } = await supabase
         .from('inventory')
-        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size, storage_location)')
+        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size, storage_location, vendor, vendor_pricing(unit_price))')
         .order('catalog_id');
       if (error) throw error;
 
@@ -50,6 +51,8 @@ module.exports = async (req, res) => {
         mckesson_url: r.catalog ? r.catalog.mckesson_url : null,
         pack_size: r.catalog ? r.catalog.pack_size : null,
         storage_location: r.catalog ? r.catalog.storage_location : null,
+        vendor: r.catalog ? r.catalog.vendor : null,
+        unit_price: r.catalog && r.catalog.vendor_pricing && r.catalog.vendor_pricing.length ? r.catalog.vendor_pricing[0].unit_price : null,
         in_stock: r.in_stock,
         par_level: r.par_level,
         last_stock_update_at: r.last_stock_update_at,
@@ -103,43 +106,44 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST' && action === 'create-order') {
-      const { items, notes, pdfBase64, filename } = req.body;
+      const { items, notes, vendor } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items is required and must be a non-empty array' });
       }
 
+      const vendorName = vendor || 'McKesson';
+
+      // McKesson orders have never used a PO number and Order History
+      // shouldn't suddenly grow one for them. Every other vendor gets one
+      // auto-generated as MMDDYYYY of today, with a -2/-3/... suffix if
+      // this vendor already has an order with that same base number today
+      // -- guarantees uniqueness without relying on client-side timing.
+      let poNumber = null;
+      if (vendorName !== 'McKesson') {
+        const now = new Date();
+        const base = String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + now.getFullYear();
+        const { data: existing, error: poErr } = await supabase
+          .from('orders')
+          .select('po_number')
+          .eq('vendor', vendorName)
+          .like('po_number', base + '%');
+        if (poErr) throw poErr;
+        const existingNumbers = (existing || []).map((r) => r.po_number).filter(Boolean);
+        if (existingNumbers.length === 0) {
+          poNumber = base;
+        } else {
+          let suffix = 2;
+          while (existingNumbers.indexOf(base + '-' + suffix) !== -1) suffix++;
+          poNumber = base + '-' + suffix;
+        }
+      }
+
       const { data: orderRows, error: orderErr } = await supabase
         .from('orders')
-        .insert({ items, notes: notes || null })
+        .insert({ items, notes: notes || null, vendor: vendorName, po_number: poNumber })
         .select();
       if (orderErr) throw orderErr;
       const order = orderRows[0];
-
-      // The "reports" Storage bucket already exists (public) but was never
-      // actually wired up -- every past order has pdf_url: null. Save the
-      // literal generated PDF here so Order History can link to the exact
-      // file that was produced/sent, not a regeneration from the stored
-      // items/notes (which could drift if catalog data changes later).
-      if (pdfBase64) {
-        const path = 'order_' + order.id + '.pdf';
-        const { error: uploadErr } = await supabase.storage
-          .from('reports')
-          .upload(path, Buffer.from(pdfBase64, 'base64'), { contentType: 'application/pdf', upsert: true });
-        if (uploadErr) {
-          // Don't fail the whole order over a storage hiccup -- the order
-          // itself (items/notes/inventory bump) still matters more than
-          // the saved copy. pdf_url just stays null for this one.
-          console.error('PDF upload failed for order', order.id, uploadErr.message);
-        } else {
-          const { data: urlData } = supabase.storage.from('reports').getPublicUrl(path);
-          const { error: pdfUrlErr } = await supabase
-            .from('orders')
-            .update({ pdf_url: urlData.publicUrl })
-            .eq('id', order.id);
-          if (pdfUrlErr) throw pdfUrlErr;
-          order.pdf_url = urlData.publicUrl;
-        }
-      }
 
       const now = new Date().toISOString();
       const logRows = items.map((it) => ({ catalog_id: it.catalog_id, order_id: order.id, ordered_at: now }));
@@ -165,6 +169,32 @@ module.exports = async (req, res) => {
       }
 
       return res.status(200).json(order);
+    }
+
+    // Step 2, called once the client has generated the actual PDF (which
+    // needed order.po_number from step 1 to print on a non-McKesson PO).
+    // The "reports" Storage bucket already exists (public) -- this just
+    // saves the literal generated PDF so Order History can link to the
+    // exact file that was produced/sent, not a regeneration from the
+    // stored items/notes (which could drift if catalog data changes later).
+    if (req.method === 'POST' && action === 'attach-pdf') {
+      const { orderId, pdfBase64, filename } = req.body;
+      if (!orderId || !pdfBase64) return res.status(400).json({ error: 'orderId and pdfBase64 are required' });
+
+      const path = 'order_' + orderId + '.pdf';
+      const { error: uploadErr } = await supabase.storage
+        .from('reports')
+        .upload(path, Buffer.from(pdfBase64, 'base64'), { contentType: 'application/pdf', upsert: true });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('reports').getPublicUrl(path);
+      const { error: pdfUrlErr } = await supabase
+        .from('orders')
+        .update({ pdf_url: urlData.publicUrl })
+        .eq('id', orderId);
+      if (pdfUrlErr) throw pdfUrlErr;
+
+      return res.status(200).json({ pdf_url: urlData.publicUrl });
     }
 
     if (req.method === 'POST' && action === 'send-email') {

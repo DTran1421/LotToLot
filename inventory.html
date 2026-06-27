@@ -164,7 +164,7 @@
     </div>
     <div class="table-scroll">
       <table class="responsive">
-        <thead><tr><th>Date</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
+        <thead><tr><th>Date</th><th>Vendor</th><th>PO #</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
       <div class="small" id="historyEmpty" style="display:none;padding:20px 0;text-align:center;">No orders generated yet.</div>
@@ -185,6 +185,14 @@ var SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
 var SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
 var DEFAULT_EMAIL_TO = "kyle.manners@mckesson.com";
 var DEFAULT_EMAIL_CC = "altru-techs@medscanlab.com";
+var vendorsByName = {}; // vendor name -> { order_email, order_cc, ship_to, bill_to, price_required }
+
+function loadVendors(){
+  return fetch('/api/catalog?action=vendors').then(function(r){ return r.json(); }).then(function(data){
+    vendorsByName = {};
+    (data || []).forEach(function(v){ vendorsByName[v.name] = v; });
+  }).catch(function(){ /* vendor directory is an enhancement, not a hard dependency -- fall back to McKesson defaults */ });
+}
 
 var allRows = [];
 var selected = {}; // catalog_id -> { row, qty }
@@ -818,7 +826,10 @@ function loadHistory(){
     document.getElementById('historyEmpty').style.display = 'none';
     body.innerHTML = data.map(function(o){
       const itemCount = (o.items || []).length;
-      return '<tr><td data-label="Date">' + fmtDate(o.created_at) + '</td><td data-label="Items">' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
+      return '<tr><td data-label="Date">' + fmtDate(o.created_at) + '</td>' +
+        '<td data-label="Vendor">' + escapeHtml(o.vendor || 'McKesson') + '</td>' +
+        '<td class="small" data-label="PO #">' + escapeHtml(o.po_number || '--') + '</td>' +
+        '<td data-label="Items">' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
         '<td class="small" data-label="Notes">' + escapeHtml(o.notes || '--') + '</td>' +
         '<td class="small" data-label="Sent To">' + escapeHtml(o.sent_to || '--') + '</td>' +
         '<td class="small" data-label="Sent At">' + (o.sent_at ? fmtDate(o.sent_at) : '--') + '</td>' +
@@ -889,49 +900,137 @@ function refreshAndOpenOrderModal(btn){
   });
 }
 
-function openOrderModal(){
-  const ids = Object.keys(selected);
-  if(ids.length === 0) return;
+function vKey(name){
+  return (name || 'McKesson').replace(/[^a-zA-Z0-9]/g, '_');
+}
 
-  const rowsHtml = ids.map(function(id){
-    const sel = selected[id];
-    const r = sel.row;
-    return '<tr data-id="' + id + '">' +
-      '<td>' + escapeHtml(r.analyzer) + '</td>' +
-      '<td>' + escapeHtml(r.item) + '</td>' +
-      '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-      '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
-      '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
-      '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
-      '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value)"></td>' +
-    '</tr>';
-  }).join('');
+function selectedByVendor(){
+  const groups = {};
+  Object.keys(selected).forEach(function(id){
+    const r = selected[id].row;
+    const vendorName = r.vendor || 'McKesson';
+    if(!groups[vendorName]) groups[vendorName] = [];
+    groups[vendorName].push(id);
+  });
+  return groups;
+}
+
+function openOrderModal(){
+  const groups = selectedByVendor();
+  const vendorNames = Object.keys(groups);
+  if(vendorNames.length === 0) return;
+
+  const sectionsHtml = vendorNames.map(renderVendorSection).join('');
 
   const modalHtml =
     '<div class="modal-overlay" id="orderModalOverlay">' +
-      '<div class="modal" style="position:relative;">' +
+      '<div class="modal" style="position:relative;max-width:980px;">' +
         '<button class="close-x" onclick="closeOrderModal()">&times;</button>' +
         '<h2>Generate Order Report</h2>' +
-        '<div class="table-scroll"><table>' +
-          '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>' +
-          '<tbody>' + rowsHtml + '</tbody>' +
-        '</table></div>' +
-        '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Notes (optional)</label>' +
-        '<textarea id="orderNotes" placeholder="Any special instructions for this order..."></textarea>' +
-        '<div class="email-row">' +
-          '<div><label>Send to</label><input type="text" id="emailTo" value="' + escapeHtml(DEFAULT_EMAIL_TO) + '"></div>' +
-          '<div><label>CC</label><input type="text" id="emailCc" value="' + escapeHtml(DEFAULT_EMAIL_CC) + '"></div>' +
-        '</div>' +
-        '<div class="modal-actions">' +
-          '<button class="primary" id="downloadBtn" onclick="generateAndDownload()">Download PDF</button>' +
-          '<button id="sendBtn" onclick="generateAndSend()">Generate &amp; Send Email</button>' +
-          '<button id="copyBtn" onclick="copyTableForSpreadsheet()">Copy table for Excel/Sheets</button>' +
-        '</div>' +
-        '<div class="status-msg" id="orderStatus"></div>' +
+        (vendorNames.length > 1 ? '<p class="small">Items are split into a separate order/PO per vendor -- each section below sends independently.</p>' : '') +
+        sectionsHtml +
       '</div>' +
     '</div>';
 
   document.getElementById('modalRoot').innerHTML = modalHtml;
+}
+
+function renderVendorSection(vendorName){
+  const key = vKey(vendorName);
+  const groups = selectedByVendor();
+  const ids = groups[vendorName];
+  const meta = vendorsByName[vendorName] || {};
+  const priceRequired = !!meta.price_required;
+
+  const defaultTo = meta.order_email || (vendorName === 'McKesson' ? DEFAULT_EMAIL_TO : '');
+  const defaultCc = meta.order_cc || (vendorName === 'McKesson' ? DEFAULT_EMAIL_CC : '');
+
+  let rowsHtml, headHtml, grandTotal = 0;
+
+  if(priceRequired){
+    rowsHtml = ids.map(function(id){
+      const sel = selected[id];
+      const r = sel.row;
+      const price = r.unit_price;
+      const hasPrice = price != null && price !== '';
+      const lineTotal = hasPrice ? Number(price) * Number(sel.qty || 0) : 0;
+      if(hasPrice) grandTotal += lineTotal;
+      return '<tr data-id="' + id + '">' +
+        '<td>' + escapeHtml(r.item) + '</td>' +
+        '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
+        '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
+        '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
+        '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value); refreshVendorSection(\'' + escapeHtml(vendorName) + '\')"></td>' +
+        '<td class="small" style="' + (hasPrice ? '' : 'color:var(--bad);font-weight:700;') + '">' + (hasPrice ? '$' + Number(price).toFixed(2) : 'Missing') + '</td>' +
+        '<td class="small">' + (hasPrice ? '$' + lineTotal.toFixed(2) : '--') + '</td>' +
+      '</tr>';
+    }).join('');
+    headHtml = '<thead><tr><th>Item</th><th>Mfr ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th><th>Unit price</th><th>Line total</th></tr></thead>';
+  } else {
+    rowsHtml = ids.map(function(id){
+      const sel = selected[id];
+      const r = sel.row;
+      return '<tr data-id="' + id + '">' +
+        '<td>' + escapeHtml(r.analyzer) + '</td>' +
+        '<td>' + escapeHtml(r.item) + '</td>' +
+        '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
+        '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
+        '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
+        '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
+        '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value)"></td>' +
+      '</tr>';
+    }).join('');
+    headHtml = '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>';
+  }
+
+  const missingPriceCount = priceRequired ? ids.filter(function(id){ return selected[id].row.unit_price == null; }).length : 0;
+
+  const addressBlock = priceRequired ?
+    '<div class="grid cols-2" style="margin-top:10px;">' +
+      '<div class="small"><strong>Ship to</strong><br>' + escapeHtml(meta.ship_to||'--').replace(/\n/g,'<br>') + '</div>' +
+      '<div class="small"><strong>Bill to</strong><br>' + escapeHtml(meta.bill_to||'--').replace(/\n/g,'<br>') + '</div>' +
+    '</div>' : '';
+
+  const totalLine = priceRequired ? '<p class="small" style="text-align:right;font-weight:700;margin-top:6px;">Grand total: $' + grandTotal.toFixed(2) + '</p>' : '';
+
+  const missingWarning = missingPriceCount > 0 ?
+    '<p class="small" style="color:var(--bad);font-weight:600;margin-top:6px;">' + missingPriceCount + ' item' + (missingPriceCount === 1 ? '' : 's') + ' missing a price -- add it on the Vendors &gt; Item Pricing page before this PO can be downloaded or sent.</p>' : '';
+
+  return '<div class="card" id="vendorSection__' + key + '" style="margin-top:14px;">' +
+    '<h2>' + escapeHtml(vendorName) + (priceRequired ? ' &mdash; Purchase Order' : '') + '</h2>' +
+    addressBlock +
+    '<div class="table-scroll" style="margin-top:10px;"><table>' + headHtml + '<tbody>' + rowsHtml + '</tbody></table></div>' +
+    totalLine +
+    missingWarning +
+    '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Notes (optional)</label>' +
+    '<textarea id="orderNotes__' + key + '" placeholder="Any special instructions for this order..."></textarea>' +
+    '<div class="email-row">' +
+      '<div><label>Send to</label><input type="text" id="emailTo__' + key + '" value="' + escapeHtml(defaultTo) + '"></div>' +
+      '<div><label>CC</label><input type="text" id="emailCc__' + key + '" value="' + escapeHtml(defaultCc) + '"></div>' +
+    '</div>' +
+    '<div class="modal-actions">' +
+      '<button class="primary" id="downloadBtn__' + key + '" onclick="generateAndDownload(\'' + escapeHtml(vendorName) + '\')"' + (missingPriceCount > 0 ? ' disabled' : '') + '>Download PDF</button>' +
+      '<button id="sendBtn__' + key + '" onclick="generateAndSend(\'' + escapeHtml(vendorName) + '\')"' + (missingPriceCount > 0 ? ' disabled' : '') + '>Generate &amp; Send Email</button>' +
+      '<button id="copyBtn__' + key + '" onclick="copyTableForSpreadsheet(\'' + escapeHtml(vendorName) + '\')">Copy table for Excel/Sheets</button>' +
+    '</div>' +
+    '<div class="status-msg" id="orderStatus__' + key + '"></div>' +
+  '</div>';
+}
+
+// Re-renders just one vendor's section in place (e.g. after a qty edit
+// changes a price-required vendor's line totals) without disturbing any
+// other vendor section's in-progress notes/email edits in the same modal.
+function refreshVendorSection(vendorName){
+  const key = vKey(vendorName);
+  const el = document.getElementById('vendorSection__' + key);
+  if(!el) return;
+  const notes = document.getElementById('orderNotes__' + key) ? document.getElementById('orderNotes__' + key).value : '';
+  const to = document.getElementById('emailTo__' + key) ? document.getElementById('emailTo__' + key).value : '';
+  const cc = document.getElementById('emailCc__' + key) ? document.getElementById('emailCc__' + key).value : '';
+  el.outerHTML = renderVendorSection(vendorName);
+  if(document.getElementById('orderNotes__' + key)) document.getElementById('orderNotes__' + key).value = notes;
+  if(document.getElementById('emailTo__' + key)) document.getElementById('emailTo__' + key).value = to;
+  if(document.getElementById('emailCc__' + key)) document.getElementById('emailCc__' + key).value = cc;
 }
 
 function updateQty(catalogId, value){
@@ -949,43 +1048,105 @@ function closeOrderModal(){
  * autoTable lays out columns within the page margins itself, so there's
  * no fixed-pixel-width HTML div that can render wider than the page like
  * the old html2canvas approach could.
+ *
+ * Two layouts: McKesson (and any other non-price-required vendor) keeps
+ * the original flat order-report format exactly as it always has been.
+ * Price-required vendors (e.g. Euroimmun) get an actual numbered
+ * Purchase Order layout with Ship To/Bill To blocks and per-line pricing,
+ * modeled on the PO format that vendor actually sent.
  */
 
-function renderPdfBlob(items, notes){
+function renderPdfBlob(vendorName, items, notes, poNumber){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const margin = 40;
   const pageWidth = doc.internal.pageSize.getWidth();
   const now = new Date();
+  const meta = vendorsByName[vendorName] || {};
+  const priceRequired = !!meta.price_required;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.setTextColor(17, 43, 71);
-  doc.text('Altru Diagnostics Order Report', margin, 42);
+  let startY = 76;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(110, 110, 110);
-  doc.text('Generated ' + now.toLocaleString(), margin, 60);
-  doc.setTextColor(0, 0, 0);
+  if(priceRequired){
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(17, 43, 71);
+    doc.text('PURCHASE ORDER - #' + poNumber, margin, 42);
 
-  doc.autoTable({
-    head: [['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']],
-    body: items.map(function(it){
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(110, 110, 110);
+    doc.text('Vendor: ' + vendorName + '   |   Generated ' + now.toLocaleString(), margin, 58);
+    doc.setTextColor(0, 0, 0);
+
+    let y = 78;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('SHIP TO:', margin, y);
+    doc.text('BILL TO:', margin + 270, y);
+    doc.setFont('helvetica', 'normal');
+    const shipLines = (meta.ship_to || '--').split('\n');
+    const billLines = (meta.bill_to || '--').split('\n');
+    const maxLines = Math.max(shipLines.length, billLines.length);
+    for(let i = 0; i < maxLines; i++){
+      y += 12;
+      if(shipLines[i]) doc.text(shipLines[i], margin, y);
+      if(billLines[i]) doc.text(billLines[i], margin + 270, y);
+    }
+    startY = y + 20;
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(17, 43, 71);
+    doc.text('Altru Diagnostics Order Report' + (vendorName !== 'McKesson' ? ' \u2014 ' + vendorName : ''), margin, 42);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(110, 110, 110);
+    doc.text('Generated ' + now.toLocaleString(), margin, 60);
+    doc.setTextColor(0, 0, 0);
+  }
+
+  let grandTotal = 0;
+  const head = priceRequired
+    ? [['Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty', 'Unit Price', 'Total']]
+    : [['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']];
+
+  const body = items.map(function(it){
+    if(priceRequired){
+      const lineTotal = (it.unit_price || 0) * (it.qty || 0);
+      grandTotal += lineTotal;
       return [
-        it.category || '--',
         it.item || '--',
         it.manufacturer_ref || '--',
-        it.mckesson_ref || '--',
         it.pack_size || '--',
-        String(it.qty)
+        String(it.qty),
+        it.unit_price != null ? '$' + Number(it.unit_price).toFixed(2) : '--',
+        '$' + lineTotal.toFixed(2)
       ];
-    }),
-    startY: 76,
+    }
+    return [
+      it.category || '--',
+      it.item || '--',
+      it.manufacturer_ref || '--',
+      it.mckesson_ref || '--',
+      it.pack_size || '--',
+      String(it.qty)
+    ];
+  });
+
+  doc.autoTable({
+    head: head,
+    body: body,
+    startY: startY,
     margin: { left: margin, right: margin },
     styles: { fontSize: 8.5, cellPadding: 5, overflow: 'linebreak', valign: 'middle' },
     headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-    columnStyles: {
+    columnStyles: priceRequired ? {
+      3: { halign: 'right', cellWidth: 32 },
+      4: { halign: 'right' },
+      5: { halign: 'right' }
+    } : {
       0: { cellWidth: 62 },
       2: { cellWidth: 58 },
       3: { cellWidth: 62 },
@@ -994,8 +1155,17 @@ function renderPdfBlob(items, notes){
     tableWidth: 'auto'
   });
 
+  let finalY = doc.lastAutoTable.finalY;
+
+  if(priceRequired){
+    finalY += 18;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Total: $' + grandTotal.toFixed(2), pageWidth - margin - 100, finalY);
+  }
+
   if(notes && notes.trim()){
-    const finalY = doc.lastAutoTable.finalY + 24;
+    finalY += 24;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(17, 43, 71);
@@ -1006,30 +1176,41 @@ function renderPdfBlob(items, notes){
     doc.text(wrapped, margin + 46, finalY);
   }
 
-  const filename = 'order_' + Date.now() + '.pdf';
+  const filename = (priceRequired ? 'PO_' + poNumber : 'order_' + Date.now()) + '.pdf';
   return Promise.resolve({ blob: doc.output('blob'), filename: filename });
 }
 
-function copyTableForSpreadsheet(){
-  const items = buildItemsPayload();
-  if(items.length === 0){ setStatus('No items to copy.', 'err'); return; }
+function copyTableForSpreadsheet(vendorName){
+  const items = buildItemsPayload(vendorName);
+  const key = vKey(vendorName);
+  if(items.length === 0){ setStatus(vendorName, 'No items to copy.', 'err'); return; }
+  const meta = vendorsByName[vendorName] || {};
+  const priceRequired = !!meta.price_required;
   // Real tab characters between columns -- this is what a PDF copy/paste
   // can't give you, since PDFs have no embedded column delimiters. Pasting
   // tab-separated text into Excel/Sheets splits it into cells correctly.
-  const header = ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
+  const header = priceRequired
+    ? ['Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty', 'Unit Price', 'Line Total'].join('\t')
+    : ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
   const rows = items.map(function(it){
+    if(priceRequired){
+      const lineTotal = (it.unit_price || 0) * (it.qty || 0);
+      return [it.item || '', it.manufacturer_ref || '', it.pack_size || '', it.qty, it.unit_price != null ? it.unit_price : '', lineTotal].join('\t');
+    }
     return [it.category || '', it.item || '', it.manufacturer_ref || '', it.mckesson_ref || '', it.pack_size || '', it.qty].join('\t');
   });
   const tsv = header + '\n' + rows.join('\n');
   navigator.clipboard.writeText(tsv).then(function(){
-    setStatus('Table copied -- paste directly into Excel or Sheets.', 'ok');
+    setStatus(vendorName, 'Table copied -- paste directly into Excel or Sheets.', 'ok');
   }).catch(function(err){
-    setStatus('Copy failed: ' + err.message, 'err');
+    setStatus(vendorName, 'Copy failed: ' + err.message, 'err');
   });
 }
 
-function buildItemsPayload(){
-  return Object.keys(selected).map(function(id){
+function buildItemsPayload(vendorName){
+  const groups = selectedByVendor();
+  const ids = groups[vendorName] || [];
+  return ids.map(function(id){
     const sel = selected[id];
     const r = sel.row;
     return {
@@ -1040,23 +1221,35 @@ function buildItemsPayload(){
       manufacturer_ref: r.manufacturer_ref,
       mckesson_ref: r.mckesson_ref,
       pack_size: r.pack_size,
+      unit_price: r.unit_price,
       qty: sel.qty
     };
   });
 }
 
-function setStatus(msg, cls){
-  const el = document.getElementById('orderStatus');
+function setStatus(vendorName, msg, cls){
+  const el = document.getElementById('orderStatus__' + vKey(vendorName));
   if(!el) return;
   el.textContent = msg;
   el.className = 'status-msg' + (cls ? ' ' + cls : '');
 }
 
-function createOrderRecord(items, notes, pdfBase64, filename){
+function createOrderRecord(items, notes, vendorName){
   return fetch('/api/inventory?action=create-order', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ items: items, notes: notes, pdfBase64: pdfBase64, filename: filename })
+    body: JSON.stringify({ items: items, notes: notes, vendor: vendorName })
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if(res.error) throw new Error(res.error);
+    return res;
+  });
+}
+
+function attachPdf(orderId, pdfBase64, filename){
+  return fetch('/api/inventory?action=attach-pdf', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ orderId: orderId, pdfBase64: pdfBase64, filename: filename })
   }).then(function(r){ return r.json(); }).then(function(res){
     if(res.error) throw new Error(res.error);
     return res;
@@ -1072,22 +1265,43 @@ function blobToBase64(blob){
   });
 }
 
-function generateAndDownload(){
-  const items = buildItemsPayload();
-  const notes = document.getElementById('orderNotes').value;
-  setStatus('Generating PDF...');
-  document.getElementById('downloadBtn').disabled = true;
-  document.getElementById('sendBtn').disabled = true;
+// After a vendor's order is created and sent/downloaded, drop just that
+// vendor's items out of the selection and remove its section from the
+// modal -- other vendor sections in the same session keep their
+// in-progress notes/email edits untouched.
+function clearVendorSelection(vendorName){
+  const groups = selectedByVendor();
+  (groups[vendorName] || []).forEach(function(id){ delete selected[id]; });
+  render();
+  const key = vKey(vendorName);
+  const section = document.getElementById('vendorSection__' + key);
+  if(section) section.remove();
+  if(Object.keys(selected).length === 0) closeOrderModal();
+}
 
-  let pdfResult;
-  renderPdfBlob(items, notes)
+function generateAndDownload(vendorName){
+  const key = vKey(vendorName);
+  const items = buildItemsPayload(vendorName);
+  const notesEl = document.getElementById('orderNotes__' + key);
+  const notes = notesEl ? notesEl.value : '';
+  setStatus(vendorName, 'Saving order record...');
+  document.getElementById('downloadBtn__' + key).disabled = true;
+  document.getElementById('sendBtn__' + key).disabled = true;
+
+  let pdfResult, orderId;
+  createOrderRecord(items, notes, vendorName)
+    .then(function(order){
+      orderId = order.id;
+      setStatus(vendorName, 'Generating PDF...');
+      return renderPdfBlob(vendorName, items, notes, order.po_number);
+    })
     .then(function(result){
       pdfResult = result;
       return blobToBase64(result.blob);
     })
     .then(function(base64){
-      setStatus('Saving order record...');
-      return createOrderRecord(items, notes, base64, pdfResult.filename);
+      setStatus(vendorName, 'Saving PDF...');
+      return attachPdf(orderId, base64, pdfResult.filename);
     })
     .then(function(){
       const url = URL.createObjectURL(pdfResult.blob);
@@ -1097,45 +1311,53 @@ function generateAndDownload(){
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus('Order saved and PDF downloaded.', 'ok');
-      clearSelection();
-      document.getElementById('downloadBtn').disabled = false;
-      document.getElementById('sendBtn').disabled = false;
+      setStatus(vendorName, 'Order saved and PDF downloaded.', 'ok');
+      clearVendorSelection(vendorName);
     })
     .catch(function(err){
-      setStatus('Error: ' + err.message, 'err');
-      document.getElementById('downloadBtn').disabled = false;
-      document.getElementById('sendBtn').disabled = false;
+      setStatus(vendorName, 'Error: ' + err.message, 'err');
+      const dl = document.getElementById('downloadBtn__' + key);
+      const sb = document.getElementById('sendBtn__' + key);
+      if(dl) dl.disabled = false;
+      if(sb) sb.disabled = false;
     });
 }
 
-function generateAndSend(){
-  const items = buildItemsPayload();
-  const notes = document.getElementById('orderNotes').value;
-  const to = document.getElementById('emailTo').value.trim();
-  const cc = document.getElementById('emailCc').value.trim();
-  if(!to){ setStatus('Enter a "Send to" address first.', 'err'); return; }
+function generateAndSend(vendorName){
+  const key = vKey(vendorName);
+  const items = buildItemsPayload(vendorName);
+  const notesEl = document.getElementById('orderNotes__' + key);
+  const notes = notesEl ? notesEl.value : '';
+  const to = document.getElementById('emailTo__' + key).value.trim();
+  const cc = document.getElementById('emailCc__' + key).value.trim();
+  if(!to){ setStatus(vendorName, 'Enter a "Send to" address first.', 'err'); return; }
 
-  setStatus('Generating PDF...');
-  document.getElementById('downloadBtn').disabled = true;
-  document.getElementById('sendBtn').disabled = true;
+  setStatus(vendorName, 'Saving order record...');
+  document.getElementById('downloadBtn__' + key).disabled = true;
+  document.getElementById('sendBtn__' + key).disabled = true;
 
-  let orderId, pdfFilename;
-  renderPdfBlob(items, notes)
+  let orderId, pdfFilename, poNumber;
+  createOrderRecord(items, notes, vendorName)
+    .then(function(order){
+      orderId = order.id;
+      poNumber = order.po_number;
+      setStatus(vendorName, 'Generating PDF...');
+      return renderPdfBlob(vendorName, items, notes, poNumber);
+    })
     .then(function(result){
       pdfFilename = result.filename;
-      setStatus('Encoding PDF...');
+      setStatus(vendorName, 'Encoding PDF...');
       return blobToBase64(result.blob);
     })
     .then(function(base64){
-      setStatus('Saving order record...');
-      return createOrderRecord(items, notes, base64, pdfFilename).then(function(order){
-        orderId = order.id;
-        return base64;
-      });
+      setStatus(vendorName, 'Saving PDF...');
+      return attachPdf(orderId, base64, pdfFilename).then(function(){ return base64; });
     })
     .then(function(base64){
-      setStatus('Sending email...');
+      setStatus(vendorName, 'Sending email...');
+      const subject = poNumber
+        ? vendorName + ' Purchase Order #' + poNumber
+        : 'Altru Diagnostics Order ' + new Date().toLocaleDateString();
       return fetch('/api/inventory?action=send-email', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -1143,7 +1365,7 @@ function generateAndSend(){
           orderId: orderId,
           to: to,
           cc: cc,
-          subject: 'Altru Diagnostics Order ' + new Date().toLocaleDateString(),
+          subject: subject,
           notes: notes,
           pdfBase64: base64,
           filename: pdfFilename
@@ -1153,19 +1375,19 @@ function generateAndSend(){
     .then(function(r){ return r.json(); })
     .then(function(res){
       if(res.error) throw new Error(res.error);
-      setStatus('Order saved and email sent to ' + to + '.', 'ok');
-      clearSelection();
-      document.getElementById('downloadBtn').disabled = false;
-      document.getElementById('sendBtn').disabled = false;
+      setStatus(vendorName, 'Order saved and email sent to ' + to + '.', 'ok');
+      clearVendorSelection(vendorName);
     })
     .catch(function(err){
-      setStatus('Order saved, but email failed: ' + err.message + ' (You can still download the PDF separately.)', 'err');
-      document.getElementById('downloadBtn').disabled = false;
-      document.getElementById('sendBtn').disabled = false;
+      setStatus(vendorName, 'Order saved, but email failed: ' + err.message + ' (You can still download the PDF separately.)', 'err');
+      const dl = document.getElementById('downloadBtn__' + key);
+      const sb = document.getElementById('sendBtn__' + key);
+      if(dl) dl.disabled = false;
+      if(sb) sb.disabled = false;
     });
 }
 
-load();
+loadVendors().then(load);
 </script>
 </body>
 </html>
