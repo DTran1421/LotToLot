@@ -23,6 +23,7 @@ module.exports = async (req, res) => {
         mckesson_ref: body.mckesson_ref || null,
         pack_size: body.pack_size || null,
         storage_temperature: body.storage_temperature || null,
+        storage_location: body.storage_location || null,
       };
 
       if (body.id) {
