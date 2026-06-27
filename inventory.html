@@ -26,6 +26,10 @@
   .table-scroll{overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;white-space:nowrap;}
+  td.wrap-cell{white-space:normal;}
+  @media (min-width:781px){
+    td.wrap-cell{max-width:220px;}
+  }
   th{font-size:10px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;background:#fff;}
   th.sortable{cursor:pointer;user-select:none;}
   th.sortable:hover{color:var(--navy);}
@@ -364,7 +368,7 @@ function render(){
           '<td data-label="Order?"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleSelect(' + r.catalog_id + ', this.checked)"></td>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
-          '<td class="small" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
+          '<td class="small wrap-cell" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small col-mobile-hide" data-label="Mfr ref #">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
           '<td class="small col-mobile-hide" data-label="McKesson ref #">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
           '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
@@ -795,7 +799,7 @@ function renderParView(){
         return '<tr>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
-          '<td class="small" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
+          '<td class="small wrap-cell" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
           '<td data-label="Par level">' + renderStepper(r.catalog_id, 'par_level', r.par_level == null ? 0 : r.par_level) + '</td>' +
         '</tr>';
