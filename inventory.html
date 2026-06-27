@@ -22,6 +22,7 @@
   .toolbar{display:flex;justify-content:flex-start;align-items:center;margin-bottom:10px;gap:14px;flex-wrap:wrap;}
   .toolbar input[type=text]{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:260px;}
   .toolbar label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;}
+  label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;}
   .count{font-size:12px;color:var(--muted);margin-left:auto;}
   .table-scroll{overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
@@ -1012,6 +1013,7 @@ function renderVendorSection(vendorName){
       '<div><label>Send to</label><input type="text" id="emailTo__' + key + '" value="' + escapeHtml(defaultTo) + '"></div>' +
       '<div><label>CC</label><input type="text" id="emailCc__' + key + '" value="' + escapeHtml(defaultCc) + '"></div>' +
     '</div>' +
+    '<label class="check" style="margin-top:10px;"><input type="checkbox" id="testMode__' + key + '"> Test mode -- preview only, won\'t save an order, bump inventory, or appear in Order History</label>' +
     '<div class="modal-actions">' +
       '<button class="primary" id="downloadBtn__' + key + '" onclick="generateAndDownload(\'' + escapeHtml(vendorName) + '\')"' + (missingPriceCount > 0 ? ' disabled' : '') + '>Download PDF</button>' +
       '<button id="sendBtn__' + key + '" onclick="generateAndSend(\'' + escapeHtml(vendorName) + '\')"' + (missingPriceCount > 0 ? ' disabled' : '') + '>Generate &amp; Send Email</button>' +
@@ -1060,7 +1062,7 @@ function closeOrderModal(){
  * modeled on the PO format that vendor actually sent.
  */
 
-function renderPdfBlob(vendorName, items, notes, poNumber){
+function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const margin = 40;
@@ -1084,6 +1086,14 @@ function renderPdfBlob(vendorName, items, notes, poNumber){
     doc.setTextColor(0, 0, 0);
 
     let y = 78;
+    if(testMode){
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(179, 38, 30);
+      doc.text('*** TEST MODE -- PREVIEW ONLY, NOT A REAL ORDER ***', margin, y);
+      doc.setTextColor(0, 0, 0);
+      y += 16;
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.text('SHIP TO:', margin, y);
@@ -1109,6 +1119,15 @@ function renderPdfBlob(vendorName, items, notes, poNumber){
     doc.setTextColor(110, 110, 110);
     doc.text('Generated ' + now.toLocaleString(), margin, 60);
     doc.setTextColor(0, 0, 0);
+
+    if(testMode){
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(179, 38, 30);
+      doc.text('*** TEST MODE -- PREVIEW ONLY, NOT A REAL ORDER ***', margin, 74);
+      doc.setTextColor(0, 0, 0);
+      startY = 90;
+    }
   }
 
   let grandTotal = 0;
@@ -1180,7 +1199,7 @@ function renderPdfBlob(vendorName, items, notes, poNumber){
     doc.text(wrapped, margin + 46, finalY);
   }
 
-  const filename = (priceRequired ? 'PO_' + poNumber : 'order_' + Date.now()) + '.pdf';
+  const filename = (priceRequired ? 'PO_' + poNumber : (testMode ? 'TEST_order_' : 'order_') + Date.now()) + '.pdf';
   return Promise.resolve({ blob: doc.output('blob'), filename: filename });
 }
 
@@ -1238,11 +1257,11 @@ function setStatus(vendorName, msg, cls){
   el.className = 'status-msg' + (cls ? ' ' + cls : '');
 }
 
-function createOrderRecord(items, notes, vendorName){
+function createOrderRecord(items, notes, vendorName, testMode){
   return fetch('/api/inventory?action=create-order', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ items: items, notes: notes, vendor: vendorName })
+    body: JSON.stringify({ items: items, notes: notes, vendor: vendorName, test: !!testMode })
   }).then(function(r){ return r.json(); }).then(function(res){
     if(res.error) throw new Error(res.error);
     return res;
@@ -1288,24 +1307,28 @@ function generateAndDownload(vendorName){
   const items = buildItemsPayload(vendorName);
   const notesEl = document.getElementById('orderNotes__' + key);
   const notes = notesEl ? notesEl.value : '';
-  setStatus(vendorName, 'Saving order record...');
+  const testModeEl = document.getElementById('testMode__' + key);
+  const testMode = testModeEl ? testModeEl.checked : false;
+
+  setStatus(vendorName, testMode ? 'Previewing (test mode -- nothing will be saved)...' : 'Saving order record...');
   document.getElementById('downloadBtn__' + key).disabled = true;
   document.getElementById('sendBtn__' + key).disabled = true;
 
   let pdfResult, orderId;
-  createOrderRecord(items, notes, vendorName)
+  createOrderRecord(items, notes, vendorName, testMode)
     .then(function(order){
       orderId = order.id;
       setStatus(vendorName, 'Generating PDF...');
-      return renderPdfBlob(vendorName, items, notes, order.po_number);
+      return renderPdfBlob(vendorName, items, notes, order.po_number, testMode);
     })
     .then(function(result){
       pdfResult = result;
       return blobToBase64(result.blob);
     })
     .then(function(base64){
+      if(testMode) return base64; // no real order row exists to attach this PDF to
       setStatus(vendorName, 'Saving PDF...');
-      return attachPdf(orderId, base64, pdfResult.filename);
+      return attachPdf(orderId, base64, pdfResult.filename).then(function(){ return base64; });
     })
     .then(function(){
       const url = URL.createObjectURL(pdfResult.blob);
@@ -1315,8 +1338,16 @@ function generateAndDownload(vendorName){
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus(vendorName, 'Order saved and PDF downloaded.', 'ok');
-      clearVendorSelection(vendorName);
+      const dl = document.getElementById('downloadBtn__' + key);
+      const sb = document.getElementById('sendBtn__' + key);
+      if(testMode){
+        setStatus(vendorName, 'Test PDF downloaded -- nothing was saved, no order was created.', 'ok');
+        if(dl) dl.disabled = false;
+        if(sb) sb.disabled = false;
+      } else {
+        setStatus(vendorName, 'Order saved and PDF downloaded.', 'ok');
+        clearVendorSelection(vendorName);
+      }
     })
     .catch(function(err){
       setStatus(vendorName, 'Error: ' + err.message, 'err');
@@ -1334,19 +1365,21 @@ function generateAndSend(vendorName){
   const notes = notesEl ? notesEl.value : '';
   const to = document.getElementById('emailTo__' + key).value.trim();
   const cc = document.getElementById('emailCc__' + key).value.trim();
+  const testModeEl = document.getElementById('testMode__' + key);
+  const testMode = testModeEl ? testModeEl.checked : false;
   if(!to){ setStatus(vendorName, 'Enter a "Send to" address first.', 'err'); return; }
 
-  setStatus(vendorName, 'Saving order record...');
+  setStatus(vendorName, testMode ? 'Previewing (test mode -- nothing will be saved)...' : 'Saving order record...');
   document.getElementById('downloadBtn__' + key).disabled = true;
   document.getElementById('sendBtn__' + key).disabled = true;
 
   let orderId, pdfFilename, poNumber;
-  createOrderRecord(items, notes, vendorName)
+  createOrderRecord(items, notes, vendorName, testMode)
     .then(function(order){
       orderId = order.id;
       poNumber = order.po_number;
       setStatus(vendorName, 'Generating PDF...');
-      return renderPdfBlob(vendorName, items, notes, poNumber);
+      return renderPdfBlob(vendorName, items, notes, poNumber, testMode);
     })
     .then(function(result){
       pdfFilename = result.filename;
@@ -1354,14 +1387,16 @@ function generateAndSend(vendorName){
       return blobToBase64(result.blob);
     })
     .then(function(base64){
+      if(testMode) return base64; // no real order row exists to attach this PDF to
       setStatus(vendorName, 'Saving PDF...');
       return attachPdf(orderId, base64, pdfFilename).then(function(){ return base64; });
     })
     .then(function(base64){
       setStatus(vendorName, 'Sending email...');
-      const subject = poNumber
+      const baseSubject = poNumber
         ? vendorName + ' Purchase Order #' + poNumber
         : 'Altru Diagnostics Order ' + new Date().toLocaleDateString();
+      const subject = testMode ? '[TEST] ' + baseSubject : baseSubject;
       return fetch('/api/inventory?action=send-email', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -1370,7 +1405,7 @@ function generateAndSend(vendorName){
           to: to,
           cc: cc,
           subject: subject,
-          notes: notes,
+          notes: (testMode ? 'THIS IS A TEST -- not a real order.\n\n' : '') + notes,
           pdfBase64: base64,
           filename: pdfFilename
         })
@@ -1379,11 +1414,19 @@ function generateAndSend(vendorName){
     .then(function(r){ return r.json(); })
     .then(function(res){
       if(res.error) throw new Error(res.error);
-      setStatus(vendorName, 'Order saved and email sent to ' + to + '.', 'ok');
-      clearVendorSelection(vendorName);
+      const dl = document.getElementById('downloadBtn__' + key);
+      const sb = document.getElementById('sendBtn__' + key);
+      if(testMode){
+        setStatus(vendorName, 'Test email sent to ' + to + ' -- nothing was saved, no order was created.', 'ok');
+        if(dl) dl.disabled = false;
+        if(sb) sb.disabled = false;
+      } else {
+        setStatus(vendorName, 'Order saved and email sent to ' + to + '.', 'ok');
+        clearVendorSelection(vendorName);
+      }
     })
     .catch(function(err){
-      setStatus(vendorName, 'Order saved, but email failed: ' + err.message + ' (You can still download the PDF separately.)', 'err');
+      setStatus(vendorName, (testMode ? 'Test email failed: ' : 'Order saved, but email failed: ') + err.message + (testMode ? '' : ' (You can still download the PDF separately.)'), 'err');
       const dl = document.getElementById('downloadBtn__' + key);
       const sb = document.getElementById('sendBtn__' + key);
       if(dl) dl.disabled = false;

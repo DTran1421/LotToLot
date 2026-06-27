@@ -9,8 +9,8 @@ const nodemailer = require('nodemailer');
  *
  * GET  /api/inventory                       -> list inventory joined with catalog + vendor + unit price + order frequency
  * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
- * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump); assigns a PO number for non-McKesson vendors. No PDF yet -- see attach-pdf.
- * POST /api/inventory?action=attach-pdf     -> save the client-generated PDF (which needed the PO number from create-order) to Storage and set orders.pdf_url
+ * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump); assigns a PO number for non-McKesson vendors. No PDF yet -- see attach-pdf. Pass test:true to preview (no writes at all, PO number prefixed TEST- and never reserved).
+ * POST /api/inventory?action=attach-pdf     -> save the client-generated PDF (which needed the PO number from create-order) to Storage and set orders.pdf_url. Skip entirely in test mode -- there's no real order row to attach to.
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
@@ -113,7 +113,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST' && action === 'create-order') {
-      const { items, notes, vendor } = req.body;
+      const { items, notes, vendor, test } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items is required and must be a non-empty array' });
       }
@@ -143,6 +143,21 @@ module.exports = async (req, res) => {
           while (existingNumbers.indexOf(base + '-' + suffix) !== -1) suffix++;
           poNumber = base + '-' + suffix;
         }
+      }
+
+      // Test mode: preview exactly what a real order would look like --
+      // including a realistic PO number -- without writing anything.
+      // Nothing is inserted into orders/order_log, no inventory bump, and
+      // the PO number above is never actually reserved (a real order
+      // placed afterward can still claim it). Prefixed with TEST- so it's
+      // unmistakable if it ever ends up on a screenshot or printout.
+      if (test) {
+        return res.status(200).json({
+          id: null,
+          test: true,
+          vendor: vendorName,
+          po_number: poNumber ? 'TEST-' + poNumber : null,
+        });
       }
 
       const { data: orderRows, error: orderErr } = await supabase
@@ -206,8 +221,8 @@ module.exports = async (req, res) => {
 
     if (req.method === 'POST' && action === 'send-email') {
       const { orderId, to, cc, subject, notes, pdfBase64, filename } = req.body;
-      if (!orderId || !to || !pdfBase64 || !filename) {
-        return res.status(400).json({ error: 'orderId, to, pdfBase64, and filename are required' });
+      if (!to || !pdfBase64 || !filename) {
+        return res.status(400).json({ error: 'to, pdfBase64, and filename are required' });
       }
 
       if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
@@ -238,11 +253,13 @@ module.exports = async (req, res) => {
       }
 
       const sentAt = new Date().toISOString();
-      const { error: updateErr } = await supabase
-        .from('orders')
-        .update({ sent_at: sentAt, sent_to: to, sent_cc: cc || null })
-        .eq('id', orderId);
-      if (updateErr) throw updateErr;
+      if (orderId) {
+        const { error: updateErr } = await supabase
+          .from('orders')
+          .update({ sent_at: sentAt, sent_to: to, sent_cc: cc || null })
+          .eq('id', orderId);
+        if (updateErr) throw updateErr;
+      }
 
       return res.status(200).json({ success: true, sentAt });
     }
