@@ -45,6 +45,7 @@
 </head>
 <body>
 <script src="/nav.js"></script>
+<script src="/identity.js"></script>
 <div class="wrap">
   <div class="masthead">
     <h1>New Shipment Log</h1>
@@ -682,6 +683,16 @@
       btn.textContent = 'Log shipments';
       resultEl.className = 'result show new';
       resultEl.innerHTML = 'Error: ' + err.message;
+    });
+  }
+
+  if(typeof Identity !== 'undefined'){
+    Identity.prompt(function(name){
+      if(!name) return;
+      var receivedByEl = document.getElementById('receivedBy');
+      var manifestReceivedByEl = document.getElementById('manifestReceivedBy');
+      if(receivedByEl) receivedByEl.value = name;
+      if(manifestReceivedByEl) manifestReceivedByEl.value = name;
     });
   }
 </script>

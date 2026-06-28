@@ -165,6 +165,7 @@
 </head>
 <body>
 <script src="/nav.js"></script>
+<script src="/identity.js"></script>
 <div class="wrap">
   <div class="masthead">
     <div>
@@ -1555,6 +1556,12 @@ function generateAndSend(vendorName){
 }
 
 loadVendors().then(load);
+
+if(typeof Identity !== 'undefined'){
+  Identity.prompt(function(name){
+    if(name) document.getElementById('countingAs').value = name;
+  });
+}
 </script>
 </body>
 </html>
