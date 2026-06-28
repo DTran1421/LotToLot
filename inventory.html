@@ -1060,6 +1060,40 @@ function openOrderModal(){
     console.log('[DEBUG] modalHtml total length:', modalHtml.length, 'about to assign to modalRoot');
     document.getElementById('modalRoot').innerHTML = modalHtml;
     console.log('[DEBUG] assigned. modalRoot now has', document.getElementById('modalRoot').children.length, 'children');
+
+    // Belt-and-suspenders: force the critical visibility/positioning styles
+    // directly via inline JS on the just-inserted elements, instead of
+    // relying solely on the .modal-overlay/.modal CSS rules. This can't be
+    // defeated by any stylesheet cascade/parsing issue, since it's applied
+    // straight to the element after it's already in the DOM.
+    var overlayEl = document.getElementById('orderModalOverlay');
+    if(overlayEl){
+      overlayEl.style.position = 'fixed';
+      overlayEl.style.top = '0';
+      overlayEl.style.left = '0';
+      overlayEl.style.right = '0';
+      overlayEl.style.bottom = '0';
+      overlayEl.style.zIndex = '2147483647'; // max safe z-index -- nothing can be stacked above this
+      overlayEl.style.background = 'rgba(15,42,71,.55)';
+      overlayEl.style.overflowY = 'auto';
+      overlayEl.style.padding = '20px';
+      overlayEl.style.display = 'block';
+      overlayEl.style.visibility = 'visible';
+      overlayEl.style.opacity = '1';
+      var computed = window.getComputedStyle(overlayEl);
+      console.log('[DEBUG] overlay computed style -- display:', computed.display, 'position:', computed.position, 'zIndex:', computed.zIndex, 'width:', computed.width, 'height:', computed.height, 'visibility:', computed.visibility, 'opacity:', computed.opacity);
+      var modalBoxEl = overlayEl.querySelector('.modal');
+      if(modalBoxEl){
+        var boxComputed = window.getComputedStyle(modalBoxEl);
+        console.log('[DEBUG] modal box computed style -- display:', boxComputed.display, 'width:', boxComputed.width, 'height:', boxComputed.height, 'visibility:', boxComputed.visibility);
+        var rect = modalBoxEl.getBoundingClientRect();
+        console.log('[DEBUG] modal box bounding rect:', JSON.stringify(rect));
+      } else {
+        console.log('[DEBUG] could not find .modal inside the overlay!');
+      }
+    } else {
+      console.log('[DEBUG] could not find #orderModalOverlay right after inserting it!');
+    }
   } catch(err){
     alert('Could not open the order modal: ' + err.message + '\n\nPlease share this exact message so it can be fixed.');
     console.error('openOrderModal failed:', err);
