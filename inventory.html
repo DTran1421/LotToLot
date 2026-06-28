@@ -1031,23 +1031,28 @@ function selectedByVendor(){
 }
 
 function openOrderModal(){
-  const groups = selectedByVendor();
-  const vendorNames = Object.keys(groups);
-  if(vendorNames.length === 0) return;
+  try {
+    const groups = selectedByVendor();
+    const vendorNames = Object.keys(groups);
+    if(vendorNames.length === 0) return;
 
-  const sectionsHtml = vendorNames.map(renderVendorSection).join('');
+    const sectionsHtml = vendorNames.map(renderVendorSection).join('');
 
-  const modalHtml =
-    '<div class="modal-overlay" id="orderModalOverlay">' +
-      '<div class="modal" style="position:relative;max-width:980px;">' +
-        '<button class="close-x" onclick="closeOrderModal()">&times;</button>' +
-        '<h2>Generate Order Report</h2>' +
-        (vendorNames.length > 1 ? '<p class="small">Items are split into a separate order/PO per vendor -- each section below sends independently.</p>' : '') +
-        sectionsHtml +
-      '</div>' +
-    '</div>';
+    const modalHtml =
+      '<div class="modal-overlay" id="orderModalOverlay">' +
+        '<div class="modal" style="position:relative;max-width:980px;">' +
+          '<button class="close-x" onclick="closeOrderModal()">&times;</button>' +
+          '<h2>Generate Order Report</h2>' +
+          (vendorNames.length > 1 ? '<p class="small">Items are split into a separate order/PO per vendor -- each section below sends independently.</p>' : '') +
+          sectionsHtml +
+        '</div>' +
+      '</div>';
 
-  document.getElementById('modalRoot').innerHTML = modalHtml;
+    document.getElementById('modalRoot').innerHTML = modalHtml;
+  } catch(err){
+    alert('Could not open the order modal: ' + err.message + '\n\nPlease share this exact message so it can be fixed.');
+    console.error('openOrderModal failed:', err);
+  }
 }
 
 // Flags an item inline if it was already ordered within the last 48 hours --
