@@ -1000,16 +1000,22 @@ function reloadInventorySnapshot(){
 }
 
 function refreshAndOpenOrderModal(btn){
+  console.log('[DEBUG] refreshAndOpenOrderModal called, selected count:', Object.keys(selected).length);
   if(btn) btn.disabled = true;
   reloadInventorySnapshot().then(function(){
+    console.log('[DEBUG] reloadInventorySnapshot resolved, selected count now:', Object.keys(selected).length);
     if(btn) btn.disabled = false;
     render();
     if(Object.keys(selected).length === 0){
+      console.log('[DEBUG] nothing selected, showing alert');
       alert("Nothing is currently checked in the Order? column, and nothing is low enough to auto-select. Check the box next to any item(s) you want to order, then click Generate Order Report again.");
       return;
     }
+    console.log('[DEBUG] calling openOrderModal now');
     openOrderModal();
+    console.log('[DEBUG] openOrderModal returned. modalRoot.innerHTML.length =', document.getElementById('modalRoot').innerHTML.length);
   }).catch(function(err){
+    console.log('[DEBUG] reloadInventorySnapshot REJECTED:', err);
     if(btn) btn.disabled = false;
     alert('Could not refresh data before generating the order: ' + err.message);
   });
@@ -1031,12 +1037,15 @@ function selectedByVendor(){
 }
 
 function openOrderModal(){
+  console.log('[DEBUG] openOrderModal entered');
   try {
     const groups = selectedByVendor();
     const vendorNames = Object.keys(groups);
+    console.log('[DEBUG] vendorNames:', vendorNames, 'counts:', vendorNames.map(function(v){ return v + '=' + groups[v].length; }));
     if(vendorNames.length === 0) return;
 
     const sectionsHtml = vendorNames.map(renderVendorSection).join('');
+    console.log('[DEBUG] sectionsHtml built, length:', sectionsHtml.length);
 
     const modalHtml =
       '<div class="modal-overlay" id="orderModalOverlay">' +
@@ -1048,7 +1057,9 @@ function openOrderModal(){
         '</div>' +
       '</div>';
 
+    console.log('[DEBUG] modalHtml total length:', modalHtml.length, 'about to assign to modalRoot');
     document.getElementById('modalRoot').innerHTML = modalHtml;
+    console.log('[DEBUG] assigned. modalRoot now has', document.getElementById('modalRoot').children.length, 'children');
   } catch(err){
     alert('Could not open the order modal: ' + err.message + '\n\nPlease share this exact message so it can be fixed.');
     console.error('openOrderModal failed:', err);
