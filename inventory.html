@@ -1004,6 +1004,10 @@ function refreshAndOpenOrderModal(btn){
   reloadInventorySnapshot().then(function(){
     if(btn) btn.disabled = false;
     render();
+    if(Object.keys(selected).length === 0){
+      alert("Nothing is currently checked in the Order? column, and nothing is low enough to auto-select. Check the box next to any item(s) you want to order, then click Generate Order Report again.");
+      return;
+    }
     openOrderModal();
   }).catch(function(err){
     if(btn) btn.disabled = false;
