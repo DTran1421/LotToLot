@@ -44,9 +44,9 @@
   #dataTable th:nth-child(9),#dataTable td:nth-child(9){width:5%;}
   #dataTable th:nth-child(10),#dataTable td:nth-child(10){width:5%;}
   #dataTable th:nth-child(11),#dataTable td:nth-child(11){width:7%;}
-  #dataTable th:nth-child(12),#dataTable td:nth-child(12){width:7%;}
-  #dataTable th:nth-child(13),#dataTable td:nth-child(13){width:7%;}
-  #dataTable th:nth-child(14),#dataTable td:nth-child(14){width:7%;}
+  #dataTable th:nth-child(12),#dataTable td:nth-child(12){width:6%;}
+  #dataTable th:nth-child(13),#dataTable td:nth-child(13){width:6%;}
+  #dataTable th:nth-child(14),#dataTable td:nth-child(14){width:9%;}
   /* #parTable: Material type, Instrument, Item, Storage Location, Pack/unit size, Par level */
   #parTable th:nth-child(1),#parTable td:nth-child(1){width:12%;}
   #parTable th:nth-child(2),#parTable td:nth-child(2){width:16%;}
@@ -117,7 +117,7 @@
   .group-low{color:var(--bad);font-weight:700;}
   .toolbar-btn{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--navy);}
   .toolbar-btn:hover{background:var(--neutral-bg);}
-  .review-pill{padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .review-pill{padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;white-space:normal;text-align:center;line-height:1.5;}
   .review-pill:hover{background:var(--neutral-bg);}
   .review-pill.reviewed{background:var(--good-bg);color:var(--good);border-color:var(--good-bg);}
   .review-progress{font-size:12px;color:var(--muted);margin:-4px 0 10px;}
@@ -731,8 +731,17 @@ function renderReviewedCell(catalogId, lastReviewedAt, reviewedBy){
   return '<button type="button" class="review-pill' + (reviewed ? ' reviewed' : '') + '" ' +
     'onclick="toggleReviewed(' + catalogId + ', this)" ' +
     'title="' + (reviewed ? ('Reviewed' + who + ' ' + fmtDate(lastReviewedAt)) : 'Tap to mark reviewed') + '">' +
-    (reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed') +
+    (reviewed ? reviewedPillLines(reviewedBy, lastReviewedAt) : 'Mark reviewed') +
   '</button>';
+}
+
+// Three explicit lines -- Reviewed / who / when -- rather than one run-on
+// string, so a long name can never push the column (and the table) wider
+// than it should be.
+function reviewedPillLines(reviewedBy, lastReviewedAt){
+  return '\u2713 Reviewed' +
+    (reviewedBy ? '<br>' + escapeHtml(reviewedBy) : '') +
+    '<br>' + fmtDate(lastReviewedAt);
 }
 
 function refreshReviewedCell(catalogId){
@@ -745,7 +754,7 @@ function refreshReviewedCell(catalogId){
   const reviewed = !!row.last_reviewed_at;
   const who = reviewed && row.reviewed_by ? (' by ' + escapeHtml(row.reviewed_by)) : '';
   btn.classList.toggle('reviewed', reviewed);
-  btn.textContent = reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed';
+  btn.innerHTML = reviewed ? reviewedPillLines(row.reviewed_by, row.last_reviewed_at) : 'Mark reviewed';
   btn.title = reviewed ? ('Reviewed' + who + ' ' + fmtDate(row.last_reviewed_at)) : 'Tap to mark reviewed';
   // If "show only not yet reviewed" is active and this item just got
   // auto-reviewed by a stock count change, drop it from view immediately.
@@ -772,7 +781,7 @@ function toggleReviewed(catalogId, btnEl){
     const reviewed = !!newValue;
     const who = reviewed && newReviewer ? (' by ' + escapeHtml(newReviewer)) : '';
     btnEl.classList.toggle('reviewed', reviewed);
-    btnEl.textContent = reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed';
+    btnEl.innerHTML = reviewed ? reviewedPillLines(newReviewer, newValue) : 'Mark reviewed';
     btnEl.title = reviewed ? ('Reviewed' + who + ' ' + fmtDate(newValue)) : 'Tap to mark reviewed';
     updateReviewProgress();
     // If "show only not yet reviewed" is active and this item just became
