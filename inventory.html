@@ -30,26 +30,28 @@
   td{word-break:break-word;overflow-wrap:break-word;}
   th{word-break:normal;overflow-wrap:break-word;}
   @media (min-width:781px){
-  /* #dataTable (Inventory tab): Order?, Material type, Item, Storage Location, Mfr ref#, McKesson ref#, Pack/unit size, In stock, Par, Status, Order freq, Last ordered, Reviewed */
+  /* #dataTable (Inventory tab): Order?, Material type, Instrument, Item, Storage Location, Mfr ref#, McKesson ref#, Pack/unit size, In stock, Par, Status, Order freq, Last ordered, Reviewed */
   #dataTable th:nth-child(1),#dataTable td:nth-child(1){width:54px;}
-  #dataTable th:nth-child(2),#dataTable td:nth-child(2){width:7%;}
-  #dataTable th:nth-child(3),#dataTable td:nth-child(3){width:13%;}
-  #dataTable th:nth-child(4),#dataTable td:nth-child(4){width:15%;}
-  #dataTable th:nth-child(5),#dataTable td:nth-child(5){width:7%;}
-  #dataTable th:nth-child(6),#dataTable td:nth-child(6){width:8%;}
+  #dataTable th:nth-child(2),#dataTable td:nth-child(2){width:6%;}
+  #dataTable th:nth-child(3),#dataTable td:nth-child(3){width:9%;}
+  #dataTable th:nth-child(4),#dataTable td:nth-child(4){width:11%;}
+  #dataTable th:nth-child(5),#dataTable td:nth-child(5){width:13%;}
+  #dataTable th:nth-child(6),#dataTable td:nth-child(6){width:6%;}
   #dataTable th:nth-child(7),#dataTable td:nth-child(7){width:7%;}
   #dataTable th:nth-child(8),#dataTable td:nth-child(8){width:6%;}
-  #dataTable th:nth-child(9),#dataTable td:nth-child(9){width:6%;}
-  #dataTable th:nth-child(10),#dataTable td:nth-child(10){width:7%;}
+  #dataTable th:nth-child(9),#dataTable td:nth-child(9){width:5%;}
+  #dataTable th:nth-child(10),#dataTable td:nth-child(10){width:5%;}
   #dataTable th:nth-child(11),#dataTable td:nth-child(11){width:7%;}
-  #dataTable th:nth-child(12),#dataTable td:nth-child(12){width:8%;}
-  #dataTable th:nth-child(13),#dataTable td:nth-child(13){width:8%;}
-  /* #parTable: Material type, Item, Storage Location, Pack/unit size, Par level */
-  #parTable th:nth-child(1),#parTable td:nth-child(1){width:16%;}
-  #parTable th:nth-child(2),#parTable td:nth-child(2){width:28%;}
-  #parTable th:nth-child(3),#parTable td:nth-child(3){width:28%;}
-  #parTable th:nth-child(4),#parTable td:nth-child(4){width:16%;}
-  #parTable th:nth-child(5),#parTable td:nth-child(5){width:12%;}
+  #dataTable th:nth-child(12),#dataTable td:nth-child(12){width:7%;}
+  #dataTable th:nth-child(13),#dataTable td:nth-child(13){width:7%;}
+  #dataTable th:nth-child(14),#dataTable td:nth-child(14){width:7%;}
+  /* #parTable: Material type, Instrument, Item, Storage Location, Pack/unit size, Par level */
+  #parTable th:nth-child(1),#parTable td:nth-child(1){width:12%;}
+  #parTable th:nth-child(2),#parTable td:nth-child(2){width:16%;}
+  #parTable th:nth-child(3),#parTable td:nth-child(3){width:22%;}
+  #parTable th:nth-child(4),#parTable td:nth-child(4){width:22%;}
+  #parTable th:nth-child(5),#parTable td:nth-child(5){width:16%;}
+  #parTable th:nth-child(6),#parTable td:nth-child(6){width:12%;}
   /* #historyTable: Date, Vendor, PO #, Items, Notes, Sent To, Sent At, PDF */
   #historyTable th:nth-child(1),#historyTable td:nth-child(1){width:11%;}
   #historyTable th:nth-child(2),#historyTable td:nth-child(2){width:11%;}
@@ -202,7 +204,7 @@
     </div>
     <div class="table-scroll">
       <table class="responsive" id="parTable">
-        <thead><tr><th>Material type</th><th>Item</th><th>Storage Location</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
+        <thead><tr><th>Material type</th><th>Instrument</th><th>Item</th><th>Storage Location</th><th>Pack/unit size</th><th>Par level</th></tr></thead>
         <tbody id="parBody"></tbody>
       </table>
     </div>
@@ -254,6 +256,7 @@ var TOTAL_COLS = 13; // Order?, category, item, storage location, mfr ref, mckes
 
 var SORT_COLUMNS = [
   { key: 'category', label: 'Material type' },
+  { key: 'analyzer', label: 'Instrument' },
   { key: 'item', label: 'Item' },
   { key: 'storage_location', label: 'Storage Location' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
@@ -270,7 +273,12 @@ var TIE_BREAK_COLUMNS = ['category', 'item'];
 function groupByAnalyzer(rows){
   const map = {};
   rows.forEach(function(r){
-    const key = r.analyzer || 'Unspecified';
+    // Bio-Rad QC controls cluster together as their own group on this page
+    // only -- this is purely a display grouping. The real analyzer/instrument
+    // value on each row is untouched, since other things (manifest matching,
+    // Browse Data, knowing which instrument a QC failure relates to) depend
+    // on it being the actual instrument, not "Bio-Rad".
+    const key = r.vendor === 'Bio-Rad' ? 'Bio-Rad (QC Controls)' : (r.analyzer || 'Unspecified');
     if(!map[key]) map[key] = [];
     map[key].push(r);
   });
@@ -354,8 +362,8 @@ function renderHead(){
   // Columns up through Par, then an explicit (non-sortable) Status column for
   // the OK/LOW pill, then the remaining sortable columns. This has to match
   // the <td> order in render() exactly.
-  const beforeStatus = SORT_COLUMNS.slice(0, 8).map(thFor).join('');
-  const afterStatus = SORT_COLUMNS.slice(8).map(thFor).join('');
+  const beforeStatus = SORT_COLUMNS.slice(0, 9).map(thFor).join('');
+  const afterStatus = SORT_COLUMNS.slice(9).map(thFor).join('');
   head.innerHTML = '<tr><th style="width:54px;white-space:nowrap;">Order?</th>' + beforeStatus + '<th>Status</th>' + afterStatus + '</tr>';
 
   head.querySelectorAll('th.sortable').forEach(function(th){
@@ -413,6 +421,7 @@ function render(){
         return '<tr class="' + (needsOrder ? 'low-stock' : '') + '" data-id="' + r.catalog_id + '">' +
           '<td data-label="Order?"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleSelect(' + r.catalog_id + ', this.checked)"></td>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
+          '<td class="small" data-label="Instrument">' + escapeHtml(r.analyzer) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
           '<td class="small wrap-cell" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small col-mobile-hide" data-label="Mfr ref #">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
@@ -834,7 +843,7 @@ function renderParView(){
     const rows = sortRows(groups[name]);
     const collapsed = collapsedParGroups.has(name);
     html += '<tr class="group-header" data-group="' + escapeHtml(name) + '">' +
-      '<td colspan="5">' +
+      '<td colspan="6">' +
         '<span class="group-chevron">' + (collapsed ? '\u25B8' : '\u25BE') + '</span>' +
         '<span class="group-name">' + escapeHtml(name) + '</span>' +
         '<span class="group-meta">' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + '</span>' +
@@ -844,6 +853,7 @@ function renderParView(){
       html += rows.map(function(r){
         return '<tr>' +
           '<td data-label="Material type">' + escapeHtml(r.category) + '</td>' +
+          '<td class="small" data-label="Instrument">' + escapeHtml(r.analyzer) + '</td>' +
           '<td data-label="Item"><strong>' + escapeHtml(r.item) + '</strong></td>' +
           '<td class="small wrap-cell" data-label="Storage Location">' + escapeHtml(r.storage_location||'--') + '</td>' +
           '<td class="small" data-label="Pack/unit size">' + escapeHtml(r.pack_size||'--') + '</td>' +
