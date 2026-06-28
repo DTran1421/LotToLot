@@ -7,8 +7,8 @@ const nodemailer = require('nodemailer');
  * files) to stay under Vercel Hobby's serverless function count limit --
  * the project was already close to it before this page existed.
  *
- * GET  /api/inventory                       -> list inventory joined with catalog + vendor + unit price + order frequency
- * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at for one catalog_id
+ * GET  /api/inventory                       -> list inventory joined with catalog + vendor + unit price + order frequency (now includes reviewed_by, last_ordered_by)
+ * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at (+ optional reviewed_by) for one catalog_id
  * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump); assigns a PO number for non-McKesson vendors. No PDF yet -- see attach-pdf. Pass test:true to preview (no writes at all, PO number prefixed TEST- and never reserved).
  * POST /api/inventory?action=attach-pdf     -> save the client-generated PDF (which needed the PO number from create-order) to Storage and set orders.pdf_url. Skip entirely in test mode -- there's no real order row to attach to.
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
@@ -63,7 +63,9 @@ module.exports = async (req, res) => {
           par_level: r.par_level,
           last_stock_update_at: r.last_stock_update_at,
           last_ordered_at: r.last_ordered_at,
+          last_ordered_by: r.last_ordered_by,
           last_reviewed_at: r.last_reviewed_at,
+          reviewed_by: r.reviewed_by,
           order_count: r.order_count,
           order_frequency: freqMap[r.catalog_id] || 0,
         };
@@ -73,7 +75,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PATCH') {
-      const { catalog_id, in_stock, par_level, last_reviewed_at } = req.body;
+      const { catalog_id, in_stock, par_level, last_reviewed_at, reviewed_by } = req.body;
       if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
 
       const update = {};
@@ -83,12 +85,14 @@ module.exports = async (req, res) => {
         // Changing the count is itself proof you looked at the item, so
         // auto-mark it reviewed -- no need to also tap "Mark reviewed".
         update.last_reviewed_at = new Date().toISOString();
+        update.reviewed_by = reviewed_by || null;
       }
       if (par_level !== undefined) {
         update.par_level = par_level;
       }
       if (last_reviewed_at !== undefined) {
         update.last_reviewed_at = last_reviewed_at;
+        update.reviewed_by = last_reviewed_at ? (reviewed_by || null) : null; // clear the name too when un-marking
       }
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ error: 'Nothing to update -- provide in_stock, par_level, and/or last_reviewed_at' });
@@ -113,7 +117,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST' && action === 'create-order') {
-      const { items, notes, vendor, test } = req.body;
+      const { items, notes, vendor, test, orderedBy } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items is required and must be a non-empty array' });
       }
@@ -162,7 +166,7 @@ module.exports = async (req, res) => {
 
       const { data: orderRows, error: orderErr } = await supabase
         .from('orders')
-        .insert({ items, notes: notes || null, vendor: vendorName, po_number: poNumber })
+        .insert({ items, notes: notes || null, vendor: vendorName, po_number: poNumber, ordered_by: orderedBy || null })
         .select();
       if (orderErr) throw orderErr;
       const order = orderRows[0];
@@ -184,6 +188,7 @@ module.exports = async (req, res) => {
           .from('inventory')
           .update({
             last_ordered_at: now,
+            last_ordered_by: orderedBy || null,
             order_count: (currentRows.order_count || 0) + 1,
           })
           .eq('catalog_id', it.catalog_id);

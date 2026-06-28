@@ -21,6 +21,8 @@
   .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
   .toolbar{display:flex;justify-content:flex-start;align-items:center;margin-bottom:10px;gap:14px;flex-wrap:wrap;}
   .toolbar input[type=text]{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:260px;}
+  .toolbar select{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:#fff;}
+  .modal input.modal-text-input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;}
   .toolbar label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;}
   label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;}
   .count{font-size:12px;color:var(--muted);margin-left:auto;}
@@ -52,15 +54,16 @@
   #parTable th:nth-child(4),#parTable td:nth-child(4){width:22%;}
   #parTable th:nth-child(5),#parTable td:nth-child(5){width:16%;}
   #parTable th:nth-child(6),#parTable td:nth-child(6){width:12%;}
-  /* #historyTable: Date, Vendor, PO #, Items, Notes, Sent To, Sent At, PDF */
-  #historyTable th:nth-child(1),#historyTable td:nth-child(1){width:11%;}
-  #historyTable th:nth-child(2),#historyTable td:nth-child(2){width:11%;}
-  #historyTable th:nth-child(3),#historyTable td:nth-child(3){width:11%;}
-  #historyTable th:nth-child(4),#historyTable td:nth-child(4){width:8%;}
-  #historyTable th:nth-child(5),#historyTable td:nth-child(5){width:24%;}
-  #historyTable th:nth-child(6),#historyTable td:nth-child(6){width:17%;}
-  #historyTable th:nth-child(7),#historyTable td:nth-child(7){width:11%;}
-  #historyTable th:nth-child(8),#historyTable td:nth-child(8){width:7%;}
+  /* #historyTable: Date, Vendor, Ordered By, PO #, Items, Notes, Sent To, Sent At, PDF */
+  #historyTable th:nth-child(1),#historyTable td:nth-child(1){width:10%;}
+  #historyTable th:nth-child(2),#historyTable td:nth-child(2){width:10%;}
+  #historyTable th:nth-child(3),#historyTable td:nth-child(3){width:10%;}
+  #historyTable th:nth-child(4),#historyTable td:nth-child(4){width:10%;}
+  #historyTable th:nth-child(5),#historyTable td:nth-child(5){width:7%;}
+  #historyTable th:nth-child(6),#historyTable td:nth-child(6){width:21%;}
+  #historyTable th:nth-child(7),#historyTable td:nth-child(7){width:15%;}
+  #historyTable th:nth-child(8),#historyTable td:nth-child(8){width:10%;}
+  #historyTable th:nth-child(9),#historyTable td:nth-child(9){width:7%;}
   /* .po-table (price-required vendor PO): Item, Mfr ref#, Pack/unit size, In stock/Par, Qty, Unit price, Line total */
   .po-table th:nth-child(1),.po-table td:nth-child(1){width:24%;}
   .po-table th:nth-child(2),.po-table td:nth-child(2){width:14%;}
@@ -179,6 +182,8 @@
   <div class="card" id="inventoryView">
     <div class="toolbar">
       <input type="text" id="search" placeholder="Filter by instrument, item, or ref #...">
+      <select id="filterStorageLocation"><option value="">All storage locations</option></select>
+      <input type="text" id="countingAs" placeholder="Counting as: your name" style="width:170px;">
       <label class="check"><input type="checkbox" id="lowStockOnly"> Show only items below par</label>
       <label class="check"><input type="checkbox" id="unreviewedOnly"> Show only not yet reviewed</label>
       <button type="button" class="toolbar-btn" onclick="collapseAllGroups()">Collapse all</button>
@@ -216,7 +221,7 @@
     </div>
     <div class="table-scroll">
       <table class="responsive" id="historyTable">
-        <thead><tr><th>Date</th><th>Vendor</th><th>PO #</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
+        <thead><tr><th>Date</th><th>Vendor</th><th>Ordered By</th><th>PO #</th><th>Items</th><th>Notes</th><th>Sent To</th><th>Sent At</th><th>PDF</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
       <div class="small" id="historyEmpty" style="display:none;padding:20px 0;text-align:center;">No orders generated yet.</div>
@@ -385,10 +390,12 @@ function render(){
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const lowOnly = document.getElementById('lowStockOnly').checked;
   const unreviewedOnly = document.getElementById('unreviewedOnly').checked;
+  const locationFilter = document.getElementById('filterStorageLocation').value;
 
   let filtered = allRows.filter(function(r){
     if(lowOnly && !isLowStock(r)) return false;
     if(unreviewedOnly && r.last_reviewed_at) return false;
+    if(locationFilter && r.storage_location !== locationFilter) return false;
     if(!filterText) return true;
     const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_location||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
@@ -432,7 +439,7 @@ function render(){
           '<td class="status-cell" data-label="Status">' + (low ? '<span class="pill low">LOW</span>' : '<span class="pill ok">OK</span>') + '</td>' +
           '<td class="small col-mobile-hide" data-label="Order freq">' + r.order_frequency + ' order' + (r.order_frequency === 1 ? '' : 's') + '</td>' +
           '<td class="small col-mobile-hide" data-label="Last ordered">' + fmtDate(r.last_ordered_at) + '</td>' +
-          '<td data-label="Reviewed">' + renderReviewedCell(r.catalog_id, r.last_reviewed_at) + '</td>' +
+          '<td data-label="Reviewed">' + renderReviewedCell(r.catalog_id, r.last_reviewed_at, r.reviewed_by) + '</td>' +
         '</tr>';
       }).join('');
     }
@@ -639,7 +646,9 @@ function saveField(catalogId, field, value, containerEl){
   fetch('/api/inventory', {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ catalog_id: catalogId, [field]: value })
+    body: JSON.stringify(field === 'in_stock'
+      ? { catalog_id: catalogId, [field]: value, reviewed_by: countingAsName() || null }
+      : { catalog_id: catalogId, [field]: value })
   })
   .then(function(r){ return r.json(); })
   .then(function(res){
@@ -715,12 +724,13 @@ function refreshRowStatus(catalogId){
 
 /* ---------- Reviewed tracking ---------- */
 
-function renderReviewedCell(catalogId, lastReviewedAt){
+function renderReviewedCell(catalogId, lastReviewedAt, reviewedBy){
   const reviewed = !!lastReviewedAt;
+  const who = reviewed && reviewedBy ? (' by ' + escapeHtml(reviewedBy)) : '';
   return '<button type="button" class="review-pill' + (reviewed ? ' reviewed' : '') + '" ' +
     'onclick="toggleReviewed(' + catalogId + ', this)" ' +
-    'title="' + (reviewed ? ('Reviewed ' + fmtDate(lastReviewedAt)) : 'Tap to mark reviewed') + '">' +
-    (reviewed ? '\u2713 Reviewed' : 'Mark reviewed') +
+    'title="' + (reviewed ? ('Reviewed' + who + ' ' + fmtDate(lastReviewedAt)) : 'Tap to mark reviewed') + '">' +
+    (reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed') +
   '</button>';
 }
 
@@ -732,9 +742,10 @@ function refreshReviewedCell(catalogId){
   const btn = tr.querySelector('.review-pill');
   if(!btn) return;
   const reviewed = !!row.last_reviewed_at;
+  const who = reviewed && row.reviewed_by ? (' by ' + escapeHtml(row.reviewed_by)) : '';
   btn.classList.toggle('reviewed', reviewed);
-  btn.textContent = reviewed ? '\u2713 Reviewed' : 'Mark reviewed';
-  btn.title = reviewed ? ('Reviewed ' + fmtDate(row.last_reviewed_at)) : 'Tap to mark reviewed';
+  btn.textContent = reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed';
+  btn.title = reviewed ? ('Reviewed' + who + ' ' + fmtDate(row.last_reviewed_at)) : 'Tap to mark reviewed';
   // If "show only not yet reviewed" is active and this item just got
   // auto-reviewed by a stock count change, drop it from view immediately.
   if(reviewed && document.getElementById('unreviewedOnly').checked) tr.remove();
@@ -744,21 +755,24 @@ function toggleReviewed(catalogId, btnEl){
   const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
   if(!row) return;
   const newValue = row.last_reviewed_at ? null : new Date().toISOString();
+  const newReviewer = newValue ? (countingAsName() || null) : null;
   btnEl.disabled = true;
   fetch('/api/inventory', {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue })
+    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue, reviewed_by: newReviewer })
   })
   .then(function(r){ return r.json(); })
   .then(function(res){
     btnEl.disabled = false;
     if(res.error){ alert('Save failed: ' + res.error); return; }
     row.last_reviewed_at = newValue;
+    row.reviewed_by = newReviewer;
     const reviewed = !!newValue;
+    const who = reviewed && newReviewer ? (' by ' + escapeHtml(newReviewer)) : '';
     btnEl.classList.toggle('reviewed', reviewed);
-    btnEl.textContent = reviewed ? '\u2713 Reviewed' : 'Mark reviewed';
-    btnEl.title = reviewed ? ('Reviewed ' + fmtDate(newValue)) : 'Tap to mark reviewed';
+    btnEl.textContent = reviewed ? '\u2713 Reviewed' + who : 'Mark reviewed';
+    btnEl.title = reviewed ? ('Reviewed' + who + ' ' + fmtDate(newValue)) : 'Tap to mark reviewed';
     updateReviewProgress();
     // If "show only not yet reviewed" is active and this item just became
     // reviewed, drop it from view without a full re-render of the rest.
@@ -784,15 +798,17 @@ function markReviewed(catalogId){
   const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
   if(!row) return;
   const newValue = new Date().toISOString();
+  const reviewer = countingAsName() || null;
   fetch('/api/inventory', {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue })
+    body: JSON.stringify({ catalog_id: catalogId, last_reviewed_at: newValue, reviewed_by: reviewer })
   })
   .then(function(r){ return r.json(); })
   .then(function(res){
     if(res.error){ console.error('Mark reviewed failed:', res.error); return; }
     row.last_reviewed_at = newValue;
+    row.reviewed_by = reviewer;
     refreshReviewedCell(catalogId);
     updateReviewProgress();
   })
@@ -811,10 +827,27 @@ function updateReviewProgress(){
 
 /* ---------- Load ---------- */
 
+function populateStorageLocationFilter(){
+  const sel = document.getElementById('filterStorageLocation');
+  const current = sel.value;
+  const locations = [...new Set(allRows.map(function(r){ return r.storage_location; }).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All storage locations</option>' +
+    locations.map(function(loc){ return '<option value="' + escapeHtml(loc) + '">' + escapeHtml(loc) + '</option>'; }).join('');
+  sel.value = current; // preserve selection across re-loads (e.g. after a real order refreshes the snapshot)
+}
+
+// Plain re-typed text, same convention as "Received by" elsewhere in this
+// app (no localStorage) -- whoever's counting types their name once per
+// session/tab and it gets stamped on every count/order they make from here.
+function countingAsName(){
+  return document.getElementById('countingAs').value.trim();
+}
+
 function load(){
   fetch('/api/inventory').then(function(r){ return r.json(); }).then(function(data){
     if(data.error){ alert('Error loading inventory: ' + data.error); return; }
     allRows = data;
+    populateStorageLocationFilter();
     // Auto-check anything under half of par so the order list starts
     // pre-populated. This is re-evaluated live (see refreshRowStatus) as
     // stock counts change, not just at load.
@@ -888,6 +921,7 @@ function loadHistory(){
       const itemCount = (o.items || []).length;
       return '<tr><td data-label="Date">' + fmtDate(o.created_at) + '</td>' +
         '<td data-label="Vendor">' + escapeHtml(o.vendor || 'McKesson') + '</td>' +
+        '<td class="small" data-label="Ordered By">' + escapeHtml(o.ordered_by || '--') + '</td>' +
         '<td class="small" data-label="PO #">' + escapeHtml(o.po_number || '--') + '</td>' +
         '<td data-label="Items">' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>' +
         '<td class="small" data-label="Notes">' + escapeHtml(o.notes || '--') + '</td>' +
@@ -916,6 +950,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
 document.getElementById('parSearch').addEventListener('input', renderParView);
 
 document.getElementById('search').addEventListener('input', render);
+document.getElementById('filterStorageLocation').addEventListener('change', render);
 document.getElementById('lowStockOnly').addEventListener('change', function(){
   if(this.checked) collapsedGroups.clear();
   render();
@@ -941,6 +976,7 @@ function reloadInventorySnapshot(){
   return fetch('/api/inventory').then(function(r){ return r.json(); }).then(function(data){
     if(data.error) throw new Error(data.error);
     allRows = data;
+    populateStorageLocationFilter();
     allRows.forEach(function(r){
       const isSelected = !!selected[r.catalog_id];
       if(shouldAutoOrder(r) && !isSelected){
@@ -1000,6 +1036,20 @@ function openOrderModal(){
   document.getElementById('modalRoot').innerHTML = modalHtml;
 }
 
+// Flags an item inline if it was already ordered within the last 48 hours --
+// the actual double-order guard for multiple people working the floor at
+// once. Doesn't block sending (a legitimate same-day re-order does happen),
+// just makes it impossible to miss that someone else may have just placed
+// this exact order.
+function recentlyOrderedWarning(r){
+  if(!r.last_ordered_at) return '';
+  const hoursAgo = (Date.now() - new Date(r.last_ordered_at).getTime()) / 3600000;
+  if(hoursAgo > 48) return '';
+  const whenText = hoursAgo < 1 ? 'less than an hour ago' : Math.round(hoursAgo) + ' hour' + (Math.round(hoursAgo) === 1 ? '' : 's') + ' ago';
+  const byText = r.last_ordered_by ? (' by ' + escapeHtml(r.last_ordered_by)) : '';
+  return '<br><span class="small" style="color:var(--bad);font-weight:600;">\u26a0 Already ordered' + byText + ' ' + whenText + ' -- confirm before re-ordering</span>';
+}
+
 function renderVendorSection(vendorName){
   const key = vKey(vendorName);
   const groups = selectedByVendor();
@@ -1021,7 +1071,7 @@ function renderVendorSection(vendorName){
       const lineTotal = hasPrice ? Number(price) * Number(sel.qty || 0) : 0;
       if(hasPrice) grandTotal += lineTotal;
       return '<tr data-id="' + id + '">' +
-        '<td>' + escapeHtml(r.item) + '</td>' +
+        '<td>' + escapeHtml(r.item) + recentlyOrderedWarning(r) + '</td>' +
         '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
         '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
         '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
@@ -1038,7 +1088,7 @@ function renderVendorSection(vendorName){
       const r = sel.row;
       return '<tr data-id="' + id + '">' +
         '<td>' + escapeHtml(r.analyzer) + '</td>' +
-        '<td>' + escapeHtml(r.item) + '</td>' +
+        '<td>' + escapeHtml(r.item) + recentlyOrderedWarning(r) + '</td>' +
         '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
         '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
         '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
@@ -1069,6 +1119,8 @@ function renderVendorSection(vendorName){
     '<div class="table-scroll" style="margin-top:10px;"><table class="' + tableClass + '">' + headHtml + '<tbody>' + rowsHtml + '</tbody></table></div>' +
     totalLine +
     missingWarning +
+    '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Ordered by</label>' +
+    '<input type="text" id="orderedBy__' + key + '" class="modal-text-input" value="' + escapeHtml(countingAsName()) + '" placeholder="Your name" style="margin-bottom:8px;">' +
     '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Notes (optional)</label>' +
     '<textarea id="orderNotes__' + key + '" placeholder="Any special instructions for this order..."></textarea>' +
     '<div class="email-row">' +
@@ -1095,10 +1147,12 @@ function refreshVendorSection(vendorName){
   const notes = document.getElementById('orderNotes__' + key) ? document.getElementById('orderNotes__' + key).value : '';
   const to = document.getElementById('emailTo__' + key) ? document.getElementById('emailTo__' + key).value : '';
   const cc = document.getElementById('emailCc__' + key) ? document.getElementById('emailCc__' + key).value : '';
+  const orderedBy = document.getElementById('orderedBy__' + key) ? document.getElementById('orderedBy__' + key).value : '';
   el.outerHTML = renderVendorSection(vendorName);
   if(document.getElementById('orderNotes__' + key)) document.getElementById('orderNotes__' + key).value = notes;
   if(document.getElementById('emailTo__' + key)) document.getElementById('emailTo__' + key).value = to;
   if(document.getElementById('emailCc__' + key)) document.getElementById('emailCc__' + key).value = cc;
+  if(document.getElementById('orderedBy__' + key)) document.getElementById('orderedBy__' + key).value = orderedBy;
 }
 
 function updateQty(catalogId, value){
@@ -1319,11 +1373,11 @@ function setStatus(vendorName, msg, cls){
   el.className = 'status-msg' + (cls ? ' ' + cls : '');
 }
 
-function createOrderRecord(items, notes, vendorName, testMode){
+function createOrderRecord(items, notes, vendorName, testMode, orderedBy){
   return fetch('/api/inventory?action=create-order', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ items: items, notes: notes, vendor: vendorName, test: !!testMode })
+    body: JSON.stringify({ items: items, notes: notes, vendor: vendorName, test: !!testMode, orderedBy: orderedBy || null })
   }).then(function(r){ return r.json(); }).then(function(res){
     if(res.error) throw new Error(res.error);
     return res;
@@ -1369,6 +1423,8 @@ function generateAndDownload(vendorName){
   const items = buildItemsPayload(vendorName);
   const notesEl = document.getElementById('orderNotes__' + key);
   const notes = notesEl ? notesEl.value : '';
+  const orderedByEl = document.getElementById('orderedBy__' + key);
+  const orderedBy = orderedByEl ? orderedByEl.value.trim() : '';
   const testModeEl = document.getElementById('testMode__' + key);
   const testMode = testModeEl ? testModeEl.checked : false;
 
@@ -1377,7 +1433,7 @@ function generateAndDownload(vendorName){
   document.getElementById('sendBtn__' + key).disabled = true;
 
   let pdfResult, orderId;
-  createOrderRecord(items, notes, vendorName, testMode)
+  createOrderRecord(items, notes, vendorName, testMode, orderedBy)
     .then(function(order){
       orderId = order.id;
       setStatus(vendorName, 'Generating PDF...');
@@ -1425,6 +1481,8 @@ function generateAndSend(vendorName){
   const items = buildItemsPayload(vendorName);
   const notesEl = document.getElementById('orderNotes__' + key);
   const notes = notesEl ? notesEl.value : '';
+  const orderedByEl = document.getElementById('orderedBy__' + key);
+  const orderedBy = orderedByEl ? orderedByEl.value.trim() : '';
   const to = document.getElementById('emailTo__' + key).value.trim();
   const cc = document.getElementById('emailCc__' + key).value.trim();
   const testModeEl = document.getElementById('testMode__' + key);
@@ -1436,7 +1494,7 @@ function generateAndSend(vendorName){
   document.getElementById('sendBtn__' + key).disabled = true;
 
   let orderId, pdfFilename, poNumber;
-  createOrderRecord(items, notes, vendorName, testMode)
+  createOrderRecord(items, notes, vendorName, testMode, orderedBy)
     .then(function(order){
       orderId = order.id;
       poNumber = order.po_number;
