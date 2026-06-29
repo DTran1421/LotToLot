@@ -136,13 +136,34 @@ function generateSheet(){
         materialType: r.category || '--',
         ref: r.manufacturer_ref || '--',
         temp: r.storage_temperature || '--',
-        warn: /DO NOT FREEZE/i.test(r.storage_temperature || '')
+        warn: /DO NOT FREEZE/i.test(r.storage_temperature || ''),
+        // Items stored frozen long-term but stable at refrigerator temp for
+        // a window once thawed (e.g. BNP/hLH calibrators in Clinical
+        // Freezer 2) -- pulled into their own section below the main list
+        // rather than interspersed by material type, since they're handled
+        // differently day-to-day once removed from the freezer.
+        thaw: /thaw/i.test(r.storage_temperature || '')
       };
     }).sort(function(a, b){
       const byType = a.materialType.localeCompare(b.materialType);
       if(byType !== 0) return byType;
       return a.label.localeCompare(b.label);
     });
+
+    const regularItems = items.filter(function(it){ return !it.thaw; });
+    const thawItems = items.filter(function(it){ return it.thaw; });
+
+    function toRow(it){ return [it.label, it.materialType, it.ref, it.temp]; }
+
+    const bodyRows = regularItems.map(toRow);
+    if(thawItems.length){
+      bodyRows.push([{
+        content: 'ONCE THAWED \u2014 STABLE AT REFRIGERATOR TEMP (SEE TEMP COLUMN FOR WINDOW)',
+        colSpan: 4,
+        styles: { fillColor: [255, 243, 205], textColor: [120, 90, 10], fontStyle: 'bold', halign: 'center', fontSize: 8.5 }
+      }]);
+      thawItems.forEach(function(it){ bodyRows.push(toRow(it)); });
+    }
 
     const generatedStr = new Date().toLocaleString();
 
@@ -201,7 +222,7 @@ function generateSheet(){
       startY: HEADER_H + 18,
       margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: BOTTOM_MARGIN },
       head: [['Item', 'Material Type', 'Ref #', 'Temp']],
-      body: items.map(function(it){ return [it.label, it.materialType, it.ref, it.temp]; }),
+      body: bodyRows,
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
       headStyles: { fillColor: [28, 63, 99], textColor: 255, fontStyle: 'bold', fontSize: 9 },
       alternateRowStyles: { fillColor: [238, 242, 246] },
