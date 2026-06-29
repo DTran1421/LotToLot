@@ -22,11 +22,13 @@
   .small{font-size:12px;color:var(--muted);}
   #status{margin-top:10px;font-size:12.5px;color:var(--muted);}
   #status.error{color:var(--bad);}
-  /* Off-screen render target -- never shown on the page itself, only
-     captured by html2canvas inside html2pdf. Fixed pixel width so the
-     proportions (and font sizes below) map predictably onto a landscape
-     letter PDF page regardless of the viewer's own window size. */
-  #pdf-render-target{position:absolute;left:-99999px;top:0;width:1040px;background:#fff;}
+  /* Render target for html2pdf -- kept in normal document flow (NOT
+     position:absolute/off-screen: html2canvas can't capture elements
+     positioned outside the page bounds, which previously caused blank
+     PDFs elsewhere in this app). It's empty except for the brief window
+     during generateSheet(), so there's nothing to see most of the time;
+     window.scrollTo(0,0) below also scrolls away from the brief flash. */
+  #pdf-render-target{width:1040px;background:#fff;}
   .sheet-header{background:var(--navy);color:#fff;padding:20px 26px;display:flex;justify-content:space-between;align-items:flex-start;border-radius:8px 8px 0 0;}
   .sheet-header h1{margin:0 0 6px;font-size:24px;letter-spacing:.3px;}
   .sheet-header .sub{margin:0;font-size:14px;color:#cfe0f0;}
@@ -197,14 +199,26 @@ function generateSheet(){
   const filename = ('ALTRU_' + loc + '_Reference_' + new Date().toISOString().slice(0, 10))
     .replace(/[^a-zA-Z0-9_\-]+/g, '_') + '.pdf';
 
+  window.scrollTo(0, 0);
+
   html2pdf().set({
-    filename: filename,
     margin: 18,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2, scrollX: 0, scrollY: 0, windowWidth: 1040, width: 1040 },
     jsPDF: { unit: 'pt', format: 'letter', orientation: 'landscape' },
     pagebreak: { mode: ['avoid-all', 'css'] }
-  }).from(target).save().then(function(){
+  }).from(target).toPdf().output('blob').then(function(pdfBlob){
+    if(!pdfBlob || pdfBlob.size < 2000){
+      throw new Error('Generated PDF looks empty (' + (pdfBlob ? pdfBlob.size : 0) + ' bytes). Try again.');
+    }
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
     showStatus('Downloaded ' + filename);
     btn.disabled = false;
   }).catch(function(err){
