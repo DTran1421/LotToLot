@@ -56,15 +56,23 @@
   .actions-cell button{padding:4px 9px;font-size:11px;}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   #printOnlyArea{display:none;}
-  #printOnlyArea table{width:100%;border-collapse:collapse;font-size:11px;}
-  #printOnlyArea th,#printOnlyArea td{border:1px solid #ccc;padding:5px 7px;text-align:left;}
-  #printOnlyArea th{background:#0f2a47;color:#fff;text-transform:uppercase;font-size:9.5px;}
-  #printOnlyArea h1{font-size:16px;color:var(--navy);margin:0 0 4px;}
-  #printOnlyArea .print-meta{font-size:11px;color:var(--muted);margin:0 0 14px;}
+  #printOnlyArea table{width:100%;border-collapse:collapse;font-size:11px;font-family:Inter,Arial,sans-serif;}
+  #printOnlyArea th,#printOnlyArea td{border:1px solid #ccc;padding:6px 8px;text-align:left;color:#172a3a;text-decoration:none;}
+  #printOnlyArea a{color:inherit;text-decoration:none;}
+  #printOnlyArea tr:nth-child(even) td{background:#f7f9fb;}
+  #printOnlyArea th{background:#0f2a47;color:#fff;text-transform:uppercase;font-size:9.5px;letter-spacing:.3px;}
+  #printOnlyArea h1{font-size:17px;color:#0f2a47;margin:0 0 4px;font-family:Inter,Arial,sans-serif;}
+  #printOnlyArea .print-meta{font-size:11px;color:#5f7385;margin:0 0 14px;font-family:Inter,Arial,sans-serif;}
   @media print{
-    body *{visibility:hidden;}
-    #printOnlyArea, #printOnlyArea *{visibility:visible;}
-    #printOnlyArea{display:block;position:absolute;top:0;left:0;width:100%;}
+    /* display:none actually removes these from layout (unlike
+       visibility:hidden, which still reserves their full height) --
+       that's what was causing dozens of blank pages after the real
+       content: the full admin page underneath was still "there",
+       just invisible. */
+    body > *:not(#printOnlyArea){display:none !important;}
+    #printOnlyArea{display:block !important;}
+    #printOnlyArea table{font-size:10px;}
+    #printOnlyArea tr{page-break-inside:avoid;}
   }
   .print-check{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;text-transform:none;color:var(--ink);}
   .print-check input{width:auto;}
