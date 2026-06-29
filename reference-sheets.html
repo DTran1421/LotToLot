@@ -139,9 +139,9 @@ function generateSheet(){
         warn: /DO NOT FREEZE/i.test(r.storage_temperature || '')
       };
     }).sort(function(a, b){
-      const byLabel = a.label.localeCompare(b.label);
-      if(byLabel !== 0) return byLabel;
-      return a.materialType.localeCompare(b.materialType);
+      const byType = a.materialType.localeCompare(b.materialType);
+      if(byType !== 0) return byType;
+      return a.label.localeCompare(b.label);
     });
 
     const generatedStr = new Date().toLocaleString();
