@@ -101,7 +101,7 @@
       <div><label>McKesson product link</label><input id="f_mckesson_url" placeholder="optional -- auto-generated from ref # if left blank"></div>
       <div><label>Pack/unit size</label><input id="f_pack_size" placeholder="e.g. 1000/BG, 6BG/BX"></div>
       <div><label>Storage temp</label><input id="f_storage_temperature" placeholder="e.g. 2-8&deg;C (Refrigerated)"></div>
-      <div><label>Storage location</label><input id="f_storage_location" placeholder="e.g. Clinical Fridge 3"></div>
+      <div><label>Storage location</label><input id="f_storage_location" placeholder="e.g. Clinical Fridge 3, or 'A (note); B (note)' for dual-location" title="Plain single location: e.g. &quot;Clinical Fridge 3&quot;.&#10;&#10;For an item that moves between two locations (e.g. frozen until opened, then refrigerated), use the format &quot;Location A (note); Location B (note)&quot; -- e.g. &quot;Clinical Freezer 1 (frozen, upon receipt); Clinical Fridge 2 (once opened)&quot;.&#10;&#10;The Reference Sheets page parses exactly this format (semicolon-separated, each location followed by a parenthetical note) to list the item under both locations, in its own section, with the correct note shown for whichever location's sheet you're viewing. A typo in the punctuation will make it silently fall back to a single combined location instead."></div>
       <div><label>Vendor</label><input id="f_vendor" list="vendor-list" placeholder="e.g. McKesson"></div>
     </div>
     <datalist id="instrument-list"></datalist>

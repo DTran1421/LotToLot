@@ -331,6 +331,7 @@ function generateSheet(){
     doc.autoTable({
       startY: HEADER_H + 18,
       margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: BOTTOM_MARGIN },
+      rowPageBreak: 'avoid',
       head: [['Item', 'Material Type', 'Ref #', 'Temp']],
       body: bodyRows,
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
