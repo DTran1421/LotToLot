@@ -554,44 +554,32 @@ function renderStepper(catalogId, field, value){
       'oninput="stepperInputChanged(' + catalogId + ',\'' + field + '\',this)" ' +
       'onblur="stepperFlush(' + catalogId + ',\'' + field + '\',this)" ' +
       'onfocus="this.select()" ' +
-      'onkeydown="console.log(\'[DEBUG] keydown on stepper, key=\', event.key); if(event.key===\'Enter\'){event.preventDefault();console.log(\'[DEBUG] Enter detected, calling stepperEnterNext\');stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
     '<span class="save-dot"></span>' +
   '</span>';
 }
 
-// Enter commits the current field (same change-detection save as blur) and
-// jumps straight to the next stepper input in document order, with its
-// existing value already selected. For In Stock specifically, pressing
-// Enter to move on is itself a deliberate "I checked this" signal -- mark
-// it reviewed even if the count didn't change, unlike a plain tap-away
-// (which deliberately stays a no-op; see stepperFlush). If the count DID
-// change, the server already auto-stamps the review as part of that save,
-// so this is occasionally a harmless redundant PATCH rather than the only
-// thing marking it reviewed.
+// Enter commits the current field and jumps straight to the next stepper
+// input in document order, with its existing value already selected.
+// Leaving an In Stock field at all -- via Enter or a plain tap-away --
+// is itself the deliberate "I checked this" signal, so it marks the item
+// reviewed even if the count didn't change (some weeks a long-lasting
+// item's count genuinely doesn't move, and it still needs a fresh
+// reviewed timestamp). See stepperFlush for where that's actually
+// handled -- blur() below triggers it either way.
 function stepperEnterNext(catalogId, field, inputEl){
-  console.log('[DEBUG] stepperEnterNext entered, catalogId=', catalogId, 'field=', field);
   const inputs = Array.prototype.slice.call(document.querySelectorAll('.stepper-input'));
   const idx = inputs.indexOf(inputEl);
-  console.log('[DEBUG] found inputEl at idx=', idx, 'of', inputs.length, 'total stepper inputs');
-  if(field === 'in_stock'){
-    console.log('[DEBUG] calling markReviewed');
-    try {
-      markReviewed(catalogId);
-    } catch(err){
-      console.log('[DEBUG] markReviewed THREW:', err.message);
-    }
-  }
+  // blur() fires stepperFlush, which now marks in_stock reviewed either way
+  // (changed -> full save auto-stamps it server-side; unchanged -> the
+  // lightweight markReviewed branch added above) -- no need to also call
+  // markReviewed directly here and risk a redundant double-PATCH.
   inputEl.blur();
-  console.log('[DEBUG] blurred current input');
   if(idx !== -1 && idx + 1 < inputs.length){
     const next = inputs[idx + 1];
-    console.log('[DEBUG] focusing next input, idx+1=', idx + 1);
     next.focus();
     next.select();
-    console.log('[DEBUG] focus+select called. document.activeElement === next?', document.activeElement === next);
-  } else {
-    console.log('[DEBUG] no next input found (idx===-1 or at the end of the list)');
   }
 }
 
@@ -620,15 +608,19 @@ function stepperFlush(catalogId, field, inputEl){
   if(pendingTimers[key]){ clearTimeout(pendingTimers[key]); delete pendingTimers[key]; }
 
   // Tapping into a field and back out without changing it (e.g. moving to
-  // the next row on mobile) shouldn't trigger a save -- previously every
-  // blur unconditionally saved, which flashed the dot and (for in_stock)
-  // auto-stamped a review even though nothing was actually verified/changed.
-  // That's what reads as "it's updating something" just from moving fields.
+  // the next row) shouldn't trigger the full save/dot-flash -- that's the
+  // "it's updating something" noise from just moving fields. But for
+  // in_stock specifically, leaving the field at all (changed or not) IS
+  // still the deliberate "I checked this" signal -- some weeks a
+  // long-lasting item's count genuinely doesn't change, and it still needs
+  // a fresh reviewed timestamp so the audit trail reflects it was actually
+  // looked at this cycle, not just whenever it last happened to change.
   const row = allRows.find(function(r){ return r.catalog_id === catalogId; });
   const currentValue = row ? Number(row[field] || 0) : null;
   if(currentValue === value){
     unsavedKeys.delete(key);
     updateSaveStatus();
+    if(field === 'in_stock') markReviewed(catalogId);
     return;
   }
 
