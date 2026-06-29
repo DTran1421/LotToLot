@@ -55,6 +55,19 @@
   .toolbar input{width:280px;}
   .actions-cell button{padding:4px 9px;font-size:11px;}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  #printOnlyArea{display:none;}
+  #printOnlyArea table{width:100%;border-collapse:collapse;font-size:11px;}
+  #printOnlyArea th,#printOnlyArea td{border:1px solid #ccc;padding:5px 7px;text-align:left;}
+  #printOnlyArea th{background:#0f2a47;color:#fff;text-transform:uppercase;font-size:9.5px;}
+  #printOnlyArea h1{font-size:16px;color:var(--navy);margin:0 0 4px;}
+  #printOnlyArea .print-meta{font-size:11px;color:var(--muted);margin:0 0 14px;}
+  @media print{
+    body *{visibility:hidden;}
+    #printOnlyArea, #printOnlyArea *{visibility:visible;}
+    #printOnlyArea{display:block;position:absolute;top:0;left:0;width:100%;}
+  }
+  .print-check{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;text-transform:none;color:var(--ink);}
+  .print-check input{width:auto;}
 </style>
 </head>
 <body>
@@ -96,6 +109,14 @@
   <div class="card">
     <div class="toolbar">
       <input type="text" id="search" placeholder="Filter by instrument, material type, item, or reference #...">
+      <button type="button" class="secondary" onclick="togglePrintPanel()">Print / Export</button>
+    </div>
+    <div class="card" id="printPanel" style="display:none;background:#fafbfc;margin-bottom:14px;">
+      <h2 style="font-size:13px;">Choose columns to include</h2>
+      <p class="small" style="margin-top:-6px;margin-bottom:10px;">Uses whatever's currently typed in the search box above and the current sort order. Item is always included.</p>
+      <div id="printColumnChecks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;"></div>
+      <button type="button" onclick="printSelectedColumns()">Generate Printable View</button>
+      <button type="button" class="secondary" onclick="togglePrintPanel()">Cancel</button>
     </div>
     <div class="table-scroll">
       <table>
@@ -105,6 +126,8 @@
     </div>
   </div>
 </div>
+
+<div id="printOnlyArea"></div>
 
 <script>
 var allRows = [];
@@ -227,7 +250,56 @@ function load(){
   fetch('/api/catalog').then(function(r){ return r.json(); }).then(function(data){
     allRows = data;
     render();
+    populatePrintColumnChecks();
   });
+}
+
+// Defaults to the columns asked for most often (Mfr ref#, Storage Temp,
+// Storage Location) -- everything else starts unchecked but is still
+// available to add. Item is always included and isn't shown as a
+// checkbox at all, same as it's always the anchor column in the table.
+var DEFAULT_PRINT_COLUMNS = ['manufacturer_ref', 'storage_temperature', 'storage_location'];
+
+function populatePrintColumnChecks(){
+  const container = document.getElementById('printColumnChecks');
+  if(container.children.length) return; // only build this once
+  container.innerHTML = SORT_COLUMNS.filter(function(c){ return c.key !== 'item'; }).map(function(c){
+    const checked = DEFAULT_PRINT_COLUMNS.indexOf(c.key) !== -1 ? ' checked' : '';
+    return '<label class="print-check"><input type="checkbox" value="' + c.key + '"' + checked + '> ' + escapeHtml(c.label) + '</label>';
+  }).join('');
+}
+
+function togglePrintPanel(){
+  const panel = document.getElementById('printPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function printSelectedColumns(){
+  const checkedCols = Array.prototype.slice.call(document.querySelectorAll('#printColumnChecks input:checked')).map(function(cb){ return cb.value; });
+  const colDefs = SORT_COLUMNS.filter(function(c){ return c.key === 'item' || checkedCols.indexOf(c.key) !== -1; });
+
+  // Same filter + sort the on-screen table is already using, so the
+  // printout always matches whatever you were just looking at.
+  const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const filtered = allRows.filter(function(r){
+    if(!filterText) return true;
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_temperature||'') + ' ' + (r.storage_location||'') + ' ' + (r.vendor||'')).toLowerCase();
+    return haystack.indexOf(filterText) !== -1;
+  });
+  const sorted = sortRows(filtered);
+
+  const headHtml = colDefs.map(function(c){ return '<th>' + escapeHtml(c.label) + '</th>'; }).join('');
+  const bodyHtml = sorted.map(function(r){
+    return '<tr>' + colDefs.map(function(c){ return '<td>' + escapeHtml(r[c.key] || '--') + '</td>'; }).join('') + '</tr>';
+  }).join('');
+
+  document.getElementById('printOnlyArea').innerHTML =
+    '<h1>Altru Diagnostics &mdash; Catalog</h1>' +
+    '<p class="print-meta">Generated ' + new Date().toLocaleString() + ' &middot; ' + sorted.length + ' item' + (sorted.length === 1 ? '' : 's') +
+      (filterText ? (' &middot; filtered by &ldquo;' + escapeHtml(filterText) + '&rdquo;') : '') + '</p>' +
+    '<table><thead><tr>' + headHtml + '</tr></thead><tbody>' + bodyHtml + '</tbody></table>';
+
+  window.print();
 }
 
 function resetForm(){
