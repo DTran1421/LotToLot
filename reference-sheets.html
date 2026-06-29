@@ -41,6 +41,7 @@
     <label>Storage location</label>
     <select id="locationSelect"><option value="">Loading...</option></select>
     <p class="small" id="itemCount" style="margin-top:8px;"></p>
+    <p id="locationNoteCallout" style="display:none;margin-top:10px;padding:10px 12px;background:#fff7e0;border:1px solid #f0d28a;border-left:4px solid #b8860b;border-radius:6px;font-size:13px;font-weight:600;color:#7a5a0a;"></p>
     <button id="generateBtn" onclick="generateSheet()" disabled>Download Reference Sheet (PDF)</button>
     <p id="status"></p>
   </div>
@@ -121,11 +122,15 @@ function itemsForLocation(loc){
 function updateItemCount(){
   const loc = document.getElementById('locationSelect').value;
   const n = itemsForLocation(loc).length;
-  let text = loc ? (n + ' item' + (n === 1 ? '' : 's') + ' at this location') : '';
+  document.getElementById('itemCount').textContent = loc ? (n + ' item' + (n === 1 ? '' : 's') + ' at this location') : '';
+
+  const callout = document.getElementById('locationNoteCallout');
   if(loc && LOCATION_NOTES[loc]){
-    text += '  \u2014  ' + LOCATION_NOTES[loc];
+    callout.textContent = '\ud83d\udccc ' + LOCATION_NOTES[loc];
+    callout.style.display = 'block';
+  } else {
+    callout.style.display = 'none';
   }
-  document.getElementById('itemCount').textContent = text;
 }
 
 function showStatus(msg, isError){
@@ -245,14 +250,27 @@ function generateSheet(){
     const subtitleText = loc + ' \u2014 Reagent & Calibrator Reference';
     const subtitleLines = doc.splitTextToSize(subtitleText, PAGE_W - MARGIN - 190 - MARGIN);
     const SUBTITLE_LINE_H = 13;
+    const SUBTITLE_START_Y = 48;
+    const subtitleEndY = SUBTITLE_START_Y + (subtitleLines.length - 1) * SUBTITLE_LINE_H;
 
+    // Location note (e.g. "Overflow fridge for reagents from Clinical
+    // Fridge 4.") needs to actually stand out -- bold, amber/gold against
+    // the navy band (not low-contrast italic light blue), with real
+    // padding above and below so it doesn't crowd the subtitle or get
+    // crammed against the bottom edge of the header.
     const locationNote = LOCATION_NOTES[loc] || '';
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(8.5);
-    const noteLines = locationNote ? doc.splitTextToSize(locationNote, PAGE_W - MARGIN - 190 - MARGIN) : [];
-    const NOTE_LINE_H = 11;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    const NOTE_LEFT_PAD = 10; // text sits to the right of a small amber bar
+    const noteLines = locationNote
+      ? doc.splitTextToSize('NOTE: ' + locationNote, PAGE_W - MARGIN - NOTE_LEFT_PAD - 190 - MARGIN)
+      : [];
+    const NOTE_LINE_H = 13;
+    const NOTE_TOP_GAP = 20;
+    const noteStartY = subtitleEndY + NOTE_TOP_GAP;
+    const noteEndY = noteStartY + (noteLines.length - 1) * NOTE_LINE_H;
 
-    const HEADER_H = 38 + subtitleLines.length * SUBTITLE_LINE_H + noteLines.length * NOTE_LINE_H;
+    const HEADER_H = noteLines.length ? (noteEndY + 16) : (subtitleEndY + 14);
 
     // Footer wraps to full page width and the page number sits on its own
     // row below it -- stacked vertically so a long location name can never
@@ -276,15 +294,19 @@ function generateSheet(){
       doc.setFontSize(10.5);
       doc.setTextColor(207, 224, 240);
       subtitleLines.forEach(function(line, i){
-        doc.text(line, MARGIN, 48 + i * SUBTITLE_LINE_H);
+        doc.text(line, MARGIN, SUBTITLE_START_Y + i * SUBTITLE_LINE_H);
       });
       if(noteLines.length){
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(8.5);
-        doc.setTextColor(170, 195, 220);
-        const noteStartY = 48 + subtitleLines.length * SUBTITLE_LINE_H + 2;
+        // Small amber bar to the left, mirroring the callout style used in
+        // the picker UI, then bold amber-on-navy text -- high contrast,
+        // not easy to miss.
+        doc.setFillColor(255, 196, 0);
+        doc.rect(MARGIN, noteStartY - 10, 3, noteLines.length * NOTE_LINE_H + 2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10.5);
+        doc.setTextColor(255, 205, 60);
         noteLines.forEach(function(line, i){
-          doc.text(line, MARGIN, noteStartY + i * NOTE_LINE_H);
+          doc.text(line, MARGIN + NOTE_LEFT_PAD, noteStartY + i * NOTE_LINE_H);
         });
       }
       doc.setFont('helvetica', 'normal');
