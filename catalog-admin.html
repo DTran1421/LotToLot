@@ -103,6 +103,7 @@
       <div><label>Storage temp</label><input id="f_storage_temperature" placeholder="e.g. 2-8&deg;C (Refrigerated)"></div>
       <div><label>Storage location</label><input id="f_storage_location" placeholder="e.g. Clinical Fridge 3, or 'A (note); B (note)' for dual-location" title="Plain single location: e.g. &quot;Clinical Fridge 3&quot;.&#10;&#10;For an item that moves between two locations (e.g. frozen until opened, then refrigerated), use the format &quot;Location A (note); Location B (note)&quot; -- e.g. &quot;Clinical Freezer 1 (frozen, upon receipt); Clinical Fridge 2 (once opened)&quot;.&#10;&#10;The Reference Sheets page parses exactly this format (semicolon-separated, each location followed by a parenthetical note) to list the item under both locations, in its own section, with the correct note shown for whichever location's sheet you're viewing. A typo in the punctuation will make it silently fall back to a single combined location instead."></div>
       <div><label>Vendor</label><input id="f_vendor" list="vendor-list" placeholder="e.g. McKesson"></div>
+      <div><label>Notes</label><input id="f_notes" placeholder="e.g. Standing order item -- not ordered individually"></div>
     </div>
     <datalist id="instrument-list"></datalist>
     <datalist id="category-list"></datalist>
@@ -152,7 +153,8 @@ var SORT_COLUMNS = [
   { key: 'pack_size', label: 'Pack/unit size' },
   { key: 'storage_temperature', label: 'Storage Temp' },
   { key: 'storage_location', label: 'Storage Location' },
-  { key: 'vendor', label: 'Vendor' }
+  { key: 'vendor', label: 'Vendor' },
+  { key: 'notes', label: 'Notes' }
 ];
 
 function escapeHtml(s){
@@ -221,7 +223,7 @@ function render(){
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const filtered = allRows.filter(function(r){
     if(!filterText) return true;
-    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_temperature||'') + ' ' + (r.storage_location||'') + ' ' + (r.vendor||'')).toLowerCase();
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_temperature||'') + ' ' + (r.storage_location||'') + ' ' + (r.vendor||'') + ' ' + (r.notes||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
   const sorted = sortRows(filtered);
@@ -238,6 +240,7 @@ function render(){
       '<td class="small">' + escapeHtml(r.storage_temperature||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.storage_location||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.vendor||'--') + '</td>' +
+      '<td class="small">' + escapeHtml(r.notes||'--') + '</td>' +
       '<td class="actions-cell">' +
         '<button class="secondary" onclick="editRow(' + r.id + ')">Edit</button> ' +
         '<button class="danger" onclick="deleteRow(' + r.id + ')">Delete</button>' +
@@ -291,7 +294,7 @@ function printSelectedColumns(){
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const filtered = allRows.filter(function(r){
     if(!filterText) return true;
-    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_temperature||'') + ' ' + (r.storage_location||'') + ' ' + (r.vendor||'')).toLowerCase();
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_name||'') + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_temperature||'') + ' ' + (r.storage_location||'') + ' ' + (r.vendor||'') + ' ' + (r.notes||'')).toLowerCase();
     return haystack.indexOf(filterText) !== -1;
   });
   const sorted = sortRows(filtered);
@@ -313,7 +316,7 @@ function printSelectedColumns(){
 function resetForm(){
   document.getElementById('editId').value = '';
   document.getElementById('formTitle').textContent = 'Add new item';
-  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_mckesson_url','f_pack_size','f_storage_temperature','f_storage_location','f_vendor'].forEach(function(id){
+  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_mckesson_url','f_pack_size','f_storage_temperature','f_storage_location','f_vendor','f_notes'].forEach(function(id){
     document.getElementById(id).value = '';
   });
   document.getElementById('formStatus').textContent = '';
@@ -335,6 +338,7 @@ function editRow(id){
   document.getElementById('f_storage_temperature').value = r.storage_temperature || '';
   document.getElementById('f_storage_location').value = r.storage_location || '';
   document.getElementById('f_vendor').value = r.vendor || '';
+  document.getElementById('f_notes').value = r.notes || '';
   window.scrollTo(0,0);
 }
 
@@ -353,7 +357,8 @@ function save(){
     pack_size: document.getElementById('f_pack_size').value,
     storage_temperature: document.getElementById('f_storage_temperature').value,
     storage_location: document.getElementById('f_storage_location').value,
-    vendor: document.getElementById('f_vendor').value
+    vendor: document.getElementById('f_vendor').value,
+    notes: document.getElementById('f_notes').value
   };
   statusEl.textContent = 'Saving...';
   fetch('/api/catalog', {

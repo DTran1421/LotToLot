@@ -137,6 +137,7 @@ module.exports = async (req, res) => {
         storage_temperature: body.storage_temperature || null,
         storage_location: body.storage_location || null,
         vendor: body.vendor && body.vendor.trim() ? body.vendor.trim() : 'McKesson',
+        notes: body.notes || null,
       };
 
       if (body.id) {
