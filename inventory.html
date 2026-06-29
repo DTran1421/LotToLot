@@ -94,6 +94,8 @@
   .stepper-btn{width:26px;height:26px;border:1px solid var(--line);background:#fff;border-radius:6px;font-size:15px;font-weight:700;color:var(--navy);cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;-webkit-tap-highlight-color:transparent;}
   .stepper-btn:hover{background:var(--neutral-bg);}
   .stepper-btn:active{background:#dde6ee;}
+  .stepper-btn.next-btn{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .stepper-btn.next-btn:active{background:#0a1d33;}
   .stepper-input{width:50px;height:26px;padding:0 4px;border:1px solid var(--line);border-radius:6px;font-size:13px;text-align:center;font-weight:600;-moz-appearance:textfield;}
   .stepper-input::-webkit-inner-spin-button,.stepper-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
   .save-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;opacity:0;transition:opacity .25s;}
@@ -101,9 +103,12 @@
   .save-dot.saved{opacity:1;background:var(--good);}
   .save-dot.err{opacity:1;background:var(--bad);}
   @keyframes save-pulse{0%,100%{opacity:.25;}50%{opacity:1;}}
+  .mobile-only-btn{display:none;}
   @media (max-width:780px){
     .stepper-btn{width:38px;height:38px;font-size:19px;}
     .stepper-input{width:48px;height:38px;font-size:15px;}
+    .mobile-only-btn{display:flex;}
+    .stepper{flex-wrap:wrap;}
   }
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
   .pill.ok{background:var(--good-bg);color:var(--good);}
@@ -555,6 +560,12 @@ function renderStepper(catalogId, field, value){
       'onfocus="this.select()" ' +
       'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
+    // iOS's numeric keypad (triggered by inputmode="numeric") has no
+    // Return/Go key at all, so there's nothing to press to fire the Enter
+    // handler above on a phone -- this gives an explicit tap target that
+    // does the exact same "commit and jump to next item" action. Desktop
+    // already has a working Enter key, so this only shows on mobile.
+    '<button type="button" class="stepper-btn next-btn mobile-only-btn" tabindex="-1" onclick="stepperEnterNext(' + catalogId + ',\'' + field + '\',this.closest(\'.stepper\').querySelector(\'.stepper-input\'))" aria-label="Next item">&rarr;</button>' +
     '<span class="save-dot"></span>' +
   '</span>';
 }
