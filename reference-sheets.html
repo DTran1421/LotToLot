@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lot Tracking - Reference Sheets</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{--navy:#0f2a47;--navy-light:#1c3f63;--bg:#f4f6f8;--card:#ffffff;--line:#dbe2e8;--ink:#172a3a;--muted:#5f7385;--bad:#b3261e;--neutral-bg:#eef2f6;}
   *{box-sizing:border-box;}
@@ -22,29 +23,6 @@
   .small{font-size:12px;color:var(--muted);}
   #status{margin-top:10px;font-size:12.5px;color:var(--muted);}
   #status.error{color:var(--bad);}
-  /* Render target for html2pdf -- kept in normal document flow (NOT
-     position:absolute/off-screen: html2canvas can't capture elements
-     positioned outside the page bounds, which previously caused blank
-     PDFs elsewhere in this app). It's empty except for the brief window
-     during generateSheet(), so there's nothing to see most of the time;
-     window.scrollTo(0,0) below also scrolls away from the brief flash. */
-  #pdf-render-target{width:1040px;background:#fff;}
-  .sheet-header{background:var(--navy);color:#fff;padding:20px 26px;display:flex;justify-content:space-between;align-items:flex-start;border-radius:8px 8px 0 0;}
-  .sheet-header h1{margin:0 0 6px;font-size:24px;letter-spacing:.3px;}
-  .sheet-header .sub{margin:0;font-size:14px;color:#cfe0f0;}
-  .sheet-header .meta{text-align:right;font-size:10.5px;color:#cfe0f0;line-height:1.5;}
-  .sheet-columns{display:flex;gap:12px;padding:14px 0 0;}
-  .sheet-col{flex:1;min-width:0;}
-  .sheet-col table{width:100%;border-collapse:collapse;table-layout:fixed;}
-  .sheet-col th{background:var(--navy-light);color:#fff;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:5px 6px;}
-  .sheet-col th:nth-child(1){width:54%;}
-  .sheet-col th:nth-child(2){width:27%;}
-  .sheet-col th:nth-child(3){width:19%;}
-  .sheet-col td{font-size:10px;padding:4px 6px;border-bottom:1px solid #d5dde5;vertical-align:middle;word-break:break-word;}
-  .sheet-col td.ref{color:var(--muted);}
-  .sheet-col tr:nth-child(even) td{background:var(--neutral-bg);}
-  .sheet-col td.temp-warn{color:var(--bad);font-weight:700;}
-  .sheet-footer{padding:10px 26px 16px;font-size:9px;color:var(--muted);text-align:center;}
 </style>
 </head>
 <body>
@@ -68,16 +46,8 @@
   </div>
 </div>
 
-<div id="pdf-render-target"></div>
-
 <script>
 var allRows = [];
-
-function escapeHtml(s){
-  const d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML;
-}
 
 // "Calibrator" -> "Cal", "Reagent" -> "Rgt", anything else -> first 3 letters.
 // Several items (CO2, HDL, Homocysteine, LDL, LPa, LPA2, RF Latex, UALB,
@@ -89,6 +59,12 @@ function categoryAbbrev(cat){
   if(cat === 'Calibrator') return 'Cal';
   if(cat === 'Reagent') return 'Rgt';
   return cat.slice(0, 3);
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
 }
 
 function loadLocations(){
@@ -131,60 +107,28 @@ function showStatus(msg, isError){
 }
 
 /**
- * Splits a sorted array into N roughly-equal column-major chunks, i.e.
- * column 1 gets the first ceil(n/N) items, column 2 the next chunk, etc.
- * -- same layout convention as a newspaper, so the sheet reads top-to-
- * bottom then left-to-right.
+ * Builds the PDF with jsPDF + autoTable -- drawing real vector text
+ * directly into the PDF, NOT screenshotting a live HTML/DOM element.
+ *
+ * This matters for two reasons learned the hard way elsewhere in this app:
+ *   1. html2canvas captures whatever the browser/OS has already done to
+ *      the DOM, including "smart text" link-style auto-detection on
+ *      code-like strings (reference numbers) -- shows up as random blue
+ *      underlined cells with no link anywhere in the markup. Drawing text
+ *      directly into the PDF sidesteps the DOM (and that quirk) entirely.
+ *   2. autoTable owns line-height/wrapping/row-height math itself, so
+ *      wrapped multi-line cells (e.g. long "DO NOT FREEZE" temp text)
+ *      can't visually collide the way they did when relying on a
+ *      browser's own text reflow inside a screenshot.
  */
-function splitIntoColumns(items, n){
-  const perCol = Math.ceil(items.length / n);
-  const cols = [];
-  for(let i = 0; i < n; i++) cols.push(items.slice(i * perCol, (i + 1) * perCol));
-  return cols;
-}
-
-function buildSheetHtml(loc, rows){
-  const items = rows.map(function(r){
-    const abbr = categoryAbbrev(r.category);
-    return {
-      label: r.item + (abbr ? ' (' + abbr + ')' : ''),
-      ref: r.manufacturer_ref || '--',
-      temp: r.storage_temperature || '--',
-      warn: /DO NOT FREEZE/i.test(r.storage_temperature || '')
-    };
-  }).sort(function(a, b){ return a.label.localeCompare(b.label); });
-
-  const columns = splitIntoColumns(items, 3);
-
-  const colsHtml = columns.map(function(col){
-    const rowsHtml = col.map(function(it){
-      return '<tr><td>' + escapeHtml(it.label) + '</td>' +
-        '<td class="ref">' + escapeHtml(it.ref) + '</td>' +
-        '<td class="' + (it.warn ? 'temp-warn' : '') + '">' + escapeHtml(it.temp) + '</td></tr>';
-    }).join('');
-    return '<div class="sheet-col"><table>' +
-      '<thead><tr><th>Item</th><th>Ref #</th><th>Temp</th></tr></thead>' +
-      '<tbody>' + rowsHtml + '</tbody></table></div>';
-  }).join('');
-
-  const generated = new Date().toLocaleString();
-
-  return '<div class="sheet-header">' +
-    '<div><h1>ALTRU DIAGNOSTICS</h1><p class="sub">' + escapeHtml(loc) + ' &mdash; Reagent &amp; Calibrator Reference</p></div>' +
-    '<div class="meta">CLIA #45D2128678<br>Lab Director: J. Stein, PhD, HCLD(ABB)</div>' +
-    '</div>' +
-    '<div class="sheet-columns">' + colsHtml + '</div>' +
-    '<div class="sheet-footer">Post on ' + escapeHtml(loc) + ' door &middot; Verify against catalog before discarding/replacing &middot; Generated ' + generated + ' from LotToLot</div>';
-}
-
 function generateSheet(){
   const loc = document.getElementById('locationSelect').value;
   if(!loc){
     showStatus('Choose a storage location first.', true);
     return;
   }
-  const rows = itemsForLocation(loc);
-  if(!rows.length){
+  const rawRows = itemsForLocation(loc);
+  if(!rawRows.length){
     showStatus('No catalog items are assigned to this storage location.', true);
     return;
   }
@@ -193,25 +137,83 @@ function generateSheet(){
   btn.disabled = true;
   showStatus('Generating PDF...');
 
-  const target = document.getElementById('pdf-render-target');
-  target.innerHTML = buildSheetHtml(loc, rows);
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+    const PAGE_W = 612, PAGE_H = 792, MARGIN = 36;
 
-  const filename = ('ALTRU_' + loc + '_Reference_' + new Date().toISOString().slice(0, 10))
-    .replace(/[^a-zA-Z0-9_\-]+/g, '_') + '.pdf';
+    const items = rawRows.map(function(r){
+      const abbr = categoryAbbrev(r.category);
+      return {
+        label: r.item + (abbr ? ' (' + abbr + ')' : ''),
+        ref: r.manufacturer_ref || '--',
+        temp: r.storage_temperature || '--',
+        warn: /DO NOT FREEZE/i.test(r.storage_temperature || '')
+      };
+    }).sort(function(a, b){ return a.label.localeCompare(b.label); });
 
-  window.scrollTo(0, 0);
+    const generatedStr = new Date().toLocaleString();
+    const HEADER_H = 70;
 
-  html2pdf().set({
-    margin: 18,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, scrollX: 0, scrollY: 0, windowWidth: 1040, width: 1040 },
-    jsPDF: { unit: 'pt', format: 'letter', orientation: 'landscape' },
-    pagebreak: { mode: ['avoid-all', 'css'] }
-  }).from(target).toPdf().output('blob').then(function(pdfBlob){
-    if(!pdfBlob || pdfBlob.size < 2000){
-      throw new Error('Generated PDF looks empty (' + (pdfBlob ? pdfBlob.size : 0) + ' bytes). Try again.');
+    function drawChrome(data){
+      // Navy header band, redrawn identically on every page.
+      doc.setFillColor(15, 42, 71);
+      doc.rect(0, 0, PAGE_W, HEADER_H, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(17);
+      doc.text('ALTRU DIAGNOSTICS', MARGIN, 30);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10.5);
+      doc.setTextColor(207, 224, 240);
+      doc.text(loc + ' \u2014 Reagent & Calibrator Reference', MARGIN, 48);
+      doc.setFontSize(8);
+      doc.text('CLIA #45D2128678', PAGE_W - MARGIN, 26, { align: 'right' });
+      doc.text('Lab Director: J. Stein, PhD, HCLD(ABB)', PAGE_W - MARGIN, 38, { align: 'right' });
+
+      // Footer
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(95, 115, 133);
+      doc.text(
+        'Post on ' + loc + ' door \u00b7 Verify against catalog before discarding/replacing \u00b7 Generated ' + generatedStr,
+        PAGE_W / 2, PAGE_H - 24, { align: 'center' }
+      );
+      doc.text('Page ' + data.pageNumber, PAGE_W - MARGIN, PAGE_H - 24, { align: 'right' });
     }
-    const url = URL.createObjectURL(pdfBlob);
+
+    doc.autoTable({
+      startY: HEADER_H + 18,
+      margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: 44 },
+      head: [['Item', 'Ref #', 'Temp']],
+      body: items.map(function(it){ return [it.label, it.ref, it.temp]; }),
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
+      headStyles: { fillColor: [28, 63, 99], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      alternateRowStyles: { fillColor: [238, 242, 246] },
+      columnStyles: {
+        0: { cellWidth: 270 },
+        1: { cellWidth: 140 },
+        2: { cellWidth: 'auto' }
+      },
+      didParseCell: function(data){
+        if(data.section === 'body' && data.column.index === 2){
+          if(/DO NOT FREEZE/i.test(String(data.cell.raw || ''))){
+            data.cell.styles.textColor = [179, 38, 30];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+      didDrawPage: drawChrome
+    });
+
+    const filename = ('ALTRU_' + loc + '_Reference_' + new Date().toISOString().slice(0, 10))
+      .replace(/[^a-zA-Z0-9_\-]+/g, '_') + '.pdf';
+
+    const blob = doc.output('blob');
+    if(!blob || blob.size < 2000){
+      throw new Error('Generated PDF looks empty (' + (blob ? blob.size : 0) + ' bytes). Try again.');
+    }
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
@@ -219,14 +221,13 @@ function generateSheet(){
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showStatus('Downloaded ' + filename);
-    btn.disabled = false;
-  }).catch(function(err){
+
+    showStatus('Downloaded ' + filename + ' (' + items.length + ' items, ' + doc.internal.getNumberOfPages() + ' page' + (doc.internal.getNumberOfPages() === 1 ? '' : 's') + ')');
+  } catch(err){
     showStatus('PDF generation failed: ' + err.message, true);
+  } finally {
     btn.disabled = false;
-  }).finally(function(){
-    target.innerHTML = '';
-  });
+  }
 }
 
 document.getElementById('locationSelect').addEventListener('change', updateItemCount);
