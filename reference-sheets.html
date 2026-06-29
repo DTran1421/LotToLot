@@ -55,12 +55,35 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
+/**
+ * Some catalog rows have a compound storage_location, e.g.
+ * "Clinical Freezer 1 (frozen, upon receipt); Clinical Fridge 2 (once opened)"
+ * for items that physically live in one place until opened/thawed/aliquoted,
+ * then move to another. Splits that into segments, each a real physical
+ * location plus the parenthetical note describing the state it's in there.
+ * A plain "Clinical Fridge 3" comes back as a single segment with no note.
+ */
+function parseLocationSegments(raw){
+  if(!raw) return [];
+  return raw.split(';').map(function(seg){
+    seg = seg.trim();
+    const m = seg.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+    return m ? { base: m[1].trim(), note: m[2].trim() } : { base: seg, note: '' };
+  }).filter(function(s){ return s.base; });
+}
+
 function loadLocations(){
   fetch('/api/catalog').then(function(r){ return r.json(); }).then(function(data){
     allRows = data;
-    const locations = [...new Set(
-      allRows.map(function(r){ return r.storage_location; }).filter(function(v){ return v && v.trim(); })
-    )].sort();
+    // The dropdown lists real physical locations only -- a compound
+    // location string is never itself a place to stand in front of, so it
+    // never appears as its own option; both real locations it references
+    // do.
+    const locationSet = new Set();
+    allRows.forEach(function(r){
+      parseLocationSegments(r.storage_location).forEach(function(s){ locationSet.add(s.base); });
+    });
+    const locations = [...locationSet].sort();
 
     const select = document.getElementById('locationSelect');
     if(!locations.length){
@@ -78,8 +101,13 @@ function loadLocations(){
   });
 }
 
+// Matches a row if ANY of its location segments is this physical location --
+// not just an exact full-string match -- so compound-location rows show up
+// under both real locations they reference.
 function itemsForLocation(loc){
-  return allRows.filter(function(r){ return r.storage_location === loc; });
+  return allRows.filter(function(r){
+    return parseLocationSegments(r.storage_location).some(function(s){ return s.base === loc; });
+  });
 }
 
 function updateItemCount(){
@@ -110,6 +138,7 @@ function showStatus(msg, isError){
  *      browser's own text reflow inside a screenshot.
  */
 function generateSheet(){
+
   const loc = document.getElementById('locationSelect').value;
   if(!loc){
     showStatus('Choose a storage location first.', true);
@@ -131,6 +160,9 @@ function generateSheet(){
     const PAGE_W = 612, PAGE_H = 792, MARGIN = 36;
 
     const items = rawRows.map(function(r){
+      const segs = parseLocationSegments(r.storage_location);
+      const thisSeg = segs.find(function(s){ return s.base === loc; }) || { base: loc, note: '' };
+      const otherSegs = segs.filter(function(s){ return s !== thisSeg; });
       return {
         label: r.item,
         materialType: r.category || '--',
@@ -139,10 +171,13 @@ function generateSheet(){
         warn: /DO NOT FREEZE/i.test(r.storage_temperature || ''),
         // Items stored frozen long-term but stable at refrigerator temp for
         // a window once thawed (e.g. BNP/hLH calibrators in Clinical
-        // Freezer 2) -- pulled into their own section below the main list
-        // rather than interspersed by material type, since they're handled
-        // differently day-to-day once removed from the freezer.
-        thaw: /thaw/i.test(r.storage_temperature || '')
+        // Freezer 2) -- pulled into their own section below the main list.
+        // Only applies to single-location items; a compound-location item's
+        // lifecycle is already captured by the dual-location section below.
+        thaw: segs.length === 1 && /thaw/i.test(r.storage_temperature || ''),
+        isCompound: segs.length > 1,
+        thisNote: thisSeg.note,
+        otherBase: otherSegs.map(function(s){ return s.base; }).join(' / ')
       };
     }).sort(function(a, b){
       const byType = a.materialType.localeCompare(b.materialType);
@@ -150,12 +185,17 @@ function generateSheet(){
       return a.label.localeCompare(b.label);
     });
 
-    const regularItems = items.filter(function(it){ return !it.thaw; });
-    const thawItems = items.filter(function(it){ return it.thaw; });
+    const regularItems = items.filter(function(it){ return !it.isCompound && !it.thaw; });
+    const thawItems = items.filter(function(it){ return !it.isCompound && it.thaw; });
+    const dualItems = items.filter(function(it){ return it.isCompound; });
 
-    function toRow(it){ return [it.label, it.materialType, it.ref, it.temp]; }
+    function toRow(it){
+      const label = it.label + (it.isCompound && it.thisNote ? ' (' + it.thisNote + ')' : '');
+      return [label, it.materialType, it.ref, it.temp];
+    }
 
     const bodyRows = regularItems.map(toRow);
+
     if(thawItems.length){
       bodyRows.push([{
         content: 'ONCE THAWED \u2014 STABLE AT REFRIGERATOR TEMP (SEE TEMP COLUMN FOR WINDOW)',
@@ -163,6 +203,24 @@ function generateSheet(){
         styles: { fillColor: [255, 243, 205], textColor: [120, 90, 10], fontStyle: 'bold', halign: 'center', fontSize: 8.5 }
       }]);
       thawItems.forEach(function(it){ bodyRows.push(toRow(it)); });
+    }
+
+    if(dualItems.length){
+      // Grouped by the OTHER physical location, since multiple compound
+      // pairs can land on the same sheet (e.g. Clinical Fridge 2 also gets
+      // items shared with both Clinical Freezer 1 and Clinical Freezer 2).
+      const groups = {};
+      dualItems.forEach(function(it){
+        (groups[it.otherBase] = groups[it.otherBase] || []).push(it);
+      });
+      Object.keys(groups).sort().forEach(function(otherBase){
+        bodyRows.push([{
+          content: 'ALSO STORED IN ' + otherBase.toUpperCase() + ' \u2014 SEE NOTE PER ITEM FOR WHICH STATE APPLIES HERE',
+          colSpan: 4,
+          styles: { fillColor: [219, 234, 254], textColor: [30, 64, 130], fontStyle: 'bold', halign: 'center', fontSize: 8.5 }
+        }]);
+        groups[otherBase].forEach(function(it){ bodyRows.push(toRow(it)); });
+      });
     }
 
     const generatedStr = new Date().toLocaleString();
