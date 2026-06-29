@@ -49,6 +49,14 @@
 <script>
 var allRows = [];
 
+// Operational notes about a physical storage location itself (not any one
+// item) -- shown both in the picker UI and on the generated PDF, right
+// under the location subtitle. Add an entry here for any location that
+// needs this kind of context.
+var LOCATION_NOTES = {
+  'Clinical Fridge 1': 'Overflow fridge for reagents from Clinical Fridge 4.'
+};
+
 function escapeHtml(s){
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -113,7 +121,11 @@ function itemsForLocation(loc){
 function updateItemCount(){
   const loc = document.getElementById('locationSelect').value;
   const n = itemsForLocation(loc).length;
-  document.getElementById('itemCount').textContent = loc ? (n + ' item' + (n === 1 ? '' : 's') + ' at this location') : '';
+  let text = loc ? (n + ' item' + (n === 1 ? '' : 's') + ' at this location') : '';
+  if(loc && LOCATION_NOTES[loc]){
+    text += '  \u2014  ' + LOCATION_NOTES[loc];
+  }
+  document.getElementById('itemCount').textContent = text;
 }
 
 function showStatus(msg, isError){
@@ -233,7 +245,14 @@ function generateSheet(){
     const subtitleText = loc + ' \u2014 Reagent & Calibrator Reference';
     const subtitleLines = doc.splitTextToSize(subtitleText, PAGE_W - MARGIN - 190 - MARGIN);
     const SUBTITLE_LINE_H = 13;
-    const HEADER_H = 38 + subtitleLines.length * SUBTITLE_LINE_H;
+
+    const locationNote = LOCATION_NOTES[loc] || '';
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    const noteLines = locationNote ? doc.splitTextToSize(locationNote, PAGE_W - MARGIN - 190 - MARGIN) : [];
+    const NOTE_LINE_H = 11;
+
+    const HEADER_H = 38 + subtitleLines.length * SUBTITLE_LINE_H + noteLines.length * NOTE_LINE_H;
 
     // Footer wraps to full page width and the page number sits on its own
     // row below it -- stacked vertically so a long location name can never
@@ -259,7 +278,18 @@ function generateSheet(){
       subtitleLines.forEach(function(line, i){
         doc.text(line, MARGIN, 48 + i * SUBTITLE_LINE_H);
       });
+      if(noteLines.length){
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8.5);
+        doc.setTextColor(170, 195, 220);
+        const noteStartY = 48 + subtitleLines.length * SUBTITLE_LINE_H + 2;
+        noteLines.forEach(function(line, i){
+          doc.text(line, MARGIN, noteStartY + i * NOTE_LINE_H);
+        });
+      }
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
+      doc.setTextColor(207, 224, 240);
       doc.text('CLIA #45D2128678', PAGE_W - MARGIN, 26, { align: 'right' });
       doc.text('Lab Director: J. Stein, PhD, HCLD(ABB)', PAGE_W - MARGIN, 38, { align: 'right' });
 
