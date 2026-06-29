@@ -77,6 +77,7 @@
       <div><label>Manufacturer name</label><input id="f_manufacturer_name" placeholder="e.g. Beckman Coulter"></div>
       <div><label>Manufacturer ref #</label><input id="f_manufacturer_ref" placeholder="e.g. OSR6102"></div>
       <div><label>McKesson ref #</label><input id="f_mckesson_ref" placeholder="optional"></div>
+      <div><label>McKesson product link</label><input id="f_mckesson_url" placeholder="optional -- auto-generated from ref # if left blank"></div>
       <div><label>Pack/unit size</label><input id="f_pack_size" placeholder="e.g. 1000/BG, 6BG/BX"></div>
       <div><label>Storage temp</label><input id="f_storage_temperature" placeholder="e.g. 2-8&deg;C (Refrigerated)"></div>
       <div><label>Storage location</label><input id="f_storage_location" placeholder="e.g. Clinical Fridge 3"></div>
@@ -232,7 +233,7 @@ function load(){
 function resetForm(){
   document.getElementById('editId').value = '';
   document.getElementById('formTitle').textContent = 'Add new item';
-  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_pack_size','f_storage_temperature','f_storage_location','f_vendor'].forEach(function(id){
+  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_mckesson_url','f_pack_size','f_storage_temperature','f_storage_location','f_vendor'].forEach(function(id){
     document.getElementById(id).value = '';
   });
   document.getElementById('formStatus').textContent = '';
@@ -249,6 +250,7 @@ function editRow(id){
   document.getElementById('f_manufacturer_name').value = r.manufacturer_name || '';
   document.getElementById('f_manufacturer_ref').value = r.manufacturer_ref || '';
   document.getElementById('f_mckesson_ref').value = r.mckesson_ref || '';
+  document.getElementById('f_mckesson_url').value = r.mckesson_url || '';
   document.getElementById('f_pack_size').value = r.pack_size || '';
   document.getElementById('f_storage_temperature').value = r.storage_temperature || '';
   document.getElementById('f_storage_location').value = r.storage_location || '';
@@ -267,6 +269,7 @@ function save(){
     manufacturer_name: document.getElementById('f_manufacturer_name').value,
     manufacturer_ref: document.getElementById('f_manufacturer_ref').value,
     mckesson_ref: document.getElementById('f_mckesson_ref').value,
+    mckesson_url: document.getElementById('f_mckesson_url').value,
     pack_size: document.getElementById('f_pack_size').value,
     storage_temperature: document.getElementById('f_storage_temperature').value,
     storage_location: document.getElementById('f_storage_location').value,

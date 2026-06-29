@@ -132,6 +132,7 @@ module.exports = async (req, res) => {
         manufacturer_name: body.manufacturer_name || null,
         manufacturer_ref: body.manufacturer_ref || null,
         mckesson_ref: body.mckesson_ref || null,
+        mckesson_url: body.mckesson_url || null,
         pack_size: body.pack_size || null,
         storage_temperature: body.storage_temperature || null,
         storage_location: body.storage_location || null,
@@ -145,7 +146,18 @@ module.exports = async (req, res) => {
       } else {
         const { data, error } = await supabase.from('catalog').insert(row).select();
         if (error) throw error;
-        return res.status(200).json(data[0]);
+        const newItem = data[0];
+
+        // Catalog and Inventory are separate tables -- without this, a
+        // brand-new item created here would never show up on the
+        // Inventory/Par Levels pages at all, since those pages only list
+        // catalog items that already have a matching inventory row.
+        const { error: invErr } = await supabase
+          .from('inventory')
+          .insert({ catalog_id: newItem.id, in_stock: 0, par_level: 0 });
+        if (invErr) throw invErr;
+
+        return res.status(200).json(newItem);
       }
     }
 
