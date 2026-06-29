@@ -145,7 +145,26 @@ function generateSheet(){
     });
 
     const generatedStr = new Date().toLocaleString();
-    const HEADER_H = 70;
+
+    // Header subtitle wraps within the space left of the CLIA/Director meta
+    // block (reserved ~190pt on the right) instead of running into it when
+    // storage_location is long.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
+    const subtitleText = loc + ' \u2014 Reagent & Calibrator Reference';
+    const subtitleLines = doc.splitTextToSize(subtitleText, PAGE_W - MARGIN - 190 - MARGIN);
+    const SUBTITLE_LINE_H = 13;
+    const HEADER_H = 38 + subtitleLines.length * SUBTITLE_LINE_H;
+
+    // Footer wraps to full page width and the page number sits on its own
+    // row below it -- stacked vertically so a long location name can never
+    // collide horizontally with "Page N", no matter how many lines it takes.
+    doc.setFontSize(7.5);
+    const footerText = 'Post on ' + loc + ' door \u00b7 Verify against catalog before discarding/replacing \u00b7 Generated ' + generatedStr;
+    const footerLines = doc.splitTextToSize(footerText, PAGE_W - 2 * MARGIN);
+    const FOOTER_LINE_H = 9;
+    const FOOTER_PAGENUM_GAP = 12;
+    const BOTTOM_MARGIN = 22 + FOOTER_PAGENUM_GAP + footerLines.length * FOOTER_LINE_H;
 
     function drawChrome(data){
       // Navy header band, redrawn identically on every page.
@@ -158,25 +177,29 @@ function generateSheet(){
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10.5);
       doc.setTextColor(207, 224, 240);
-      doc.text(loc + ' \u2014 Reagent & Calibrator Reference', MARGIN, 48);
+      subtitleLines.forEach(function(line, i){
+        doc.text(line, MARGIN, 48 + i * SUBTITLE_LINE_H);
+      });
       doc.setFontSize(8);
       doc.text('CLIA #45D2128678', PAGE_W - MARGIN, 26, { align: 'right' });
       doc.text('Lab Director: J. Stein, PhD, HCLD(ABB)', PAGE_W - MARGIN, 38, { align: 'right' });
 
-      // Footer
+      // Footer text block, then page number on its own row beneath it.
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(95, 115, 133);
-      doc.text(
-        'Post on ' + loc + ' door \u00b7 Verify against catalog before discarding/replacing \u00b7 Generated ' + generatedStr,
-        PAGE_W / 2, PAGE_H - 24, { align: 'center' }
-      );
-      doc.text('Page ' + data.pageNumber, PAGE_W - MARGIN, PAGE_H - 24, { align: 'right' });
+      const pageNumY = PAGE_H - 14;
+      const footerLastLineY = pageNumY - FOOTER_PAGENUM_GAP;
+      footerLines.forEach(function(line, i){
+        const y = footerLastLineY - (footerLines.length - 1 - i) * FOOTER_LINE_H;
+        doc.text(line, PAGE_W / 2, y, { align: 'center' });
+      });
+      doc.text('Page ' + data.pageNumber, PAGE_W - MARGIN, pageNumY, { align: 'right' });
     }
 
     doc.autoTable({
       startY: HEADER_H + 18,
-      margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: 44 },
+      margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: BOTTOM_MARGIN },
       head: [['Item', 'Material Type', 'Ref #', 'Temp']],
       body: items.map(function(it){ return [it.label, it.materialType, it.ref, it.temp]; }),
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
