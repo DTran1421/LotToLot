@@ -554,7 +554,7 @@ function renderStepper(catalogId, field, value){
       'oninput="stepperInputChanged(' + catalogId + ',\'' + field + '\',this)" ' +
       'onblur="stepperFlush(' + catalogId + ',\'' + field + '\',this)" ' +
       'onfocus="this.select()" ' +
-      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
+      'onkeydown="console.log(\'[DEBUG] keydown on stepper, key=\', event.key); if(event.key===\'Enter\'){event.preventDefault();console.log(\'[DEBUG] Enter detected, calling stepperEnterNext\');stepperEnterNext(' + catalogId + ',\'' + field + '\',this);}">' +
     '<button type="button" class="stepper-btn" tabindex="-1" onclick="stepperStep(' + catalogId + ',\'' + field + '\',1,this)" aria-label="Increase">&plus;</button>' +
     '<span class="save-dot"></span>' +
   '</span>';
@@ -570,14 +570,28 @@ function renderStepper(catalogId, field, value){
 // so this is occasionally a harmless redundant PATCH rather than the only
 // thing marking it reviewed.
 function stepperEnterNext(catalogId, field, inputEl){
+  console.log('[DEBUG] stepperEnterNext entered, catalogId=', catalogId, 'field=', field);
   const inputs = Array.prototype.slice.call(document.querySelectorAll('.stepper-input'));
   const idx = inputs.indexOf(inputEl);
-  if(field === 'in_stock') markReviewed(catalogId);
+  console.log('[DEBUG] found inputEl at idx=', idx, 'of', inputs.length, 'total stepper inputs');
+  if(field === 'in_stock'){
+    console.log('[DEBUG] calling markReviewed');
+    try {
+      markReviewed(catalogId);
+    } catch(err){
+      console.log('[DEBUG] markReviewed THREW:', err.message);
+    }
+  }
   inputEl.blur();
+  console.log('[DEBUG] blurred current input');
   if(idx !== -1 && idx + 1 < inputs.length){
     const next = inputs[idx + 1];
+    console.log('[DEBUG] focusing next input, idx+1=', idx + 1);
     next.focus();
     next.select();
+    console.log('[DEBUG] focus+select called. document.activeElement === next?', document.activeElement === next);
+  } else {
+    console.log('[DEBUG] no next input found (idx===-1 or at the end of the list)');
   }
 }
 
