@@ -49,18 +49,6 @@
 <script>
 var allRows = [];
 
-// "Calibrator" -> "Cal", "Reagent" -> "Rgt", anything else -> first 3 letters.
-// Several items (CO2, HDL, Homocysteine, LDL, LPa, LPA2, RF Latex, UALB,
-// Valproic Acid, Cystatin C, etc.) exist as both a calibrator AND a reagent
-// in the same fridge, so this suffix is always shown rather than only when
-// a clash is detected -- consistent and never ambiguous.
-function categoryAbbrev(cat){
-  if(!cat) return '';
-  if(cat === 'Calibrator') return 'Cal';
-  if(cat === 'Reagent') return 'Rgt';
-  return cat.slice(0, 3);
-}
-
 function escapeHtml(s){
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -143,14 +131,18 @@ function generateSheet(){
     const PAGE_W = 612, PAGE_H = 792, MARGIN = 36;
 
     const items = rawRows.map(function(r){
-      const abbr = categoryAbbrev(r.category);
       return {
-        label: r.item + (abbr ? ' (' + abbr + ')' : ''),
+        label: r.item,
+        materialType: r.category || '--',
         ref: r.manufacturer_ref || '--',
         temp: r.storage_temperature || '--',
         warn: /DO NOT FREEZE/i.test(r.storage_temperature || '')
       };
-    }).sort(function(a, b){ return a.label.localeCompare(b.label); });
+    }).sort(function(a, b){
+      const byLabel = a.label.localeCompare(b.label);
+      if(byLabel !== 0) return byLabel;
+      return a.materialType.localeCompare(b.materialType);
+    });
 
     const generatedStr = new Date().toLocaleString();
     const HEADER_H = 70;
@@ -185,18 +177,19 @@ function generateSheet(){
     doc.autoTable({
       startY: HEADER_H + 18,
       margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 18, bottom: 44 },
-      head: [['Item', 'Ref #', 'Temp']],
-      body: items.map(function(it){ return [it.label, it.ref, it.temp]; }),
+      head: [['Item', 'Material Type', 'Ref #', 'Temp']],
+      body: items.map(function(it){ return [it.label, it.materialType, it.ref, it.temp]; }),
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
       headStyles: { fillColor: [28, 63, 99], textColor: 255, fontStyle: 'bold', fontSize: 9 },
       alternateRowStyles: { fillColor: [238, 242, 246] },
       columnStyles: {
-        0: { cellWidth: 270 },
-        1: { cellWidth: 140 },
-        2: { cellWidth: 'auto' }
+        0: { cellWidth: 195 },
+        1: { cellWidth: 95 },
+        2: { cellWidth: 120 },
+        3: { cellWidth: 'auto' }
       },
       didParseCell: function(data){
-        if(data.section === 'body' && data.column.index === 2){
+        if(data.section === 'body' && data.column.index === 3){
           if(/DO NOT FREEZE/i.test(String(data.cell.raw || ''))){
             data.cell.styles.textColor = [179, 38, 30];
             data.cell.styles.fontStyle = 'bold';
