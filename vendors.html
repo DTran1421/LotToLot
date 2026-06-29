@@ -30,23 +30,26 @@
   .row-actions{display:flex;gap:8px;margin-top:12px;}
   .check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);text-transform:none;font-weight:500;}
   .check input{width:auto;}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{word-break:break-word;overflow-wrap:break-word;}
-  /* #vendorDirTable: Vendor, Order email, CC, Price required?, Notes, Actions */
-  #vendorDirTable th:nth-child(1),#vendorDirTable td:nth-child(1){width:14%;}
-  #vendorDirTable th:nth-child(2),#vendorDirTable td:nth-child(2){width:20%;}
-  #vendorDirTable th:nth-child(3),#vendorDirTable td:nth-child(3){width:18%;}
-  #vendorDirTable th:nth-child(4),#vendorDirTable td:nth-child(4){width:12%;}
-  #vendorDirTable th:nth-child(5),#vendorDirTable td:nth-child(5){width:21%;}
-  #vendorDirTable th:nth-child(6),#vendorDirTable td:nth-child(6){width:15%;}
-  /* #pricingTable: Vendor, Instrument, Material type, Item, Mfr ref#, Pack/unit size, Unit price */
-  #pricingTable th:nth-child(1),#pricingTable td:nth-child(1){width:12%;}
-  #pricingTable th:nth-child(2),#pricingTable td:nth-child(2){width:20%;}
-  #pricingTable th:nth-child(3),#pricingTable td:nth-child(3){width:13%;}
-  #pricingTable th:nth-child(4),#pricingTable td:nth-child(4){width:22%;}
-  #pricingTable th:nth-child(5),#pricingTable td:nth-child(5){width:13%;}
-  #pricingTable th:nth-child(6),#pricingTable td:nth-child(6){width:13%;}
-  #pricingTable th:nth-child(7),#pricingTable td:nth-child(7){width:7%;}
+  @media (min-width:781px){
+    table{table-layout:fixed;}
+    /* #vendorDirTable: Vendor, Order email, CC, Price required?, Notes, Actions */
+    #vendorDirTable th:nth-child(1),#vendorDirTable td:nth-child(1){width:14%;}
+    #vendorDirTable th:nth-child(2),#vendorDirTable td:nth-child(2){width:20%;}
+    #vendorDirTable th:nth-child(3),#vendorDirTable td:nth-child(3){width:18%;}
+    #vendorDirTable th:nth-child(4),#vendorDirTable td:nth-child(4){width:12%;}
+    #vendorDirTable th:nth-child(5),#vendorDirTable td:nth-child(5){width:21%;}
+    #vendorDirTable th:nth-child(6),#vendorDirTable td:nth-child(6){width:15%;}
+    /* #pricingTable: Vendor, Instrument, Material type, Item, Mfr ref#, Pack/unit size, Unit price */
+    #pricingTable th:nth-child(1),#pricingTable td:nth-child(1){width:12%;}
+    #pricingTable th:nth-child(2),#pricingTable td:nth-child(2){width:20%;}
+    #pricingTable th:nth-child(3),#pricingTable td:nth-child(3){width:13%;}
+    #pricingTable th:nth-child(4),#pricingTable td:nth-child(4){width:22%;}
+    #pricingTable th:nth-child(5),#pricingTable td:nth-child(5){width:13%;}
+    #pricingTable th:nth-child(6),#pricingTable td:nth-child(6){width:13%;}
+    #pricingTable th:nth-child(7),#pricingTable td:nth-child(7){width:7%;}
+  }
   th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;}
   th{font-size:10.5px;text-transform:uppercase;color:var(--muted);}
   .small{font-size:12px;color:var(--muted);}
