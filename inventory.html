@@ -134,6 +134,8 @@
     table.responsive td[data-label]::before{content:attr(data-label);float:left;font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;margin-right:8px;}
     table.responsive tr.group-header{border-radius:8px;margin-bottom:6px;padding:0;}
     table.responsive tr.group-header td{text-align:left;}
+    table.responsive td[data-label="Reviewed"]{text-align:left;}
+    table.responsive td[data-label="Reviewed"] .review-pill{display:block;width:100%;clear:both;margin-top:4px;box-sizing:border-box;}
   }
   .order-bar{position:fixed;left:0;right:0;bottom:0;background:var(--navy);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;box-shadow:0 -4px 14px rgba(0,0,0,.15);z-index:50;}
   .order-bar .count-text{font-weight:600;font-size:13.5px;}
