@@ -152,7 +152,7 @@ var currentRows = [];
 
 var COLUMN_LABELS = {
   reagent_master: ['instrument','category','item','manufacturer_ref','mckesson_ref','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
-  lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified'],
+  lot_to_lot_reports: ['submitted_at','instrument','category','item','old_lot','new_lot','pass','status','performed_by','pdf_url','verified_by','date_verified','voided_by','voided_at','void_reason'],
   receiving_log: ['logged_at','received_by','instrument','category','item','manufacturer_ref','mckesson_ref','lot_number','quantity','expiration_date','previous_lot','is_new_lot','status','comments','source_manifest_url'],
   catalog: ['analyzer','item','category','manufacturer_name','manufacturer_ref','mckesson_ref','pack_size','storage_temperature','storage_location','vendor']
 };
@@ -194,6 +194,7 @@ var STATUS_DISPLAY = {
   'Pending Review': { label: 'Awaiting approval', cls: 'review' },
   'Failed - needs investigation': { label: 'Failed', cls: 'fail' },
   'Verified': { label: 'Verified', cls: 'verified' },
+  'Voided': { label: 'Voided', cls: 'dismissed' },
 };
 
 function formatCell(col, value){
@@ -217,7 +218,7 @@ function formatCell(col, value){
   if(col === 'is_new_lot'){
     return value ? 'Yes' : 'No';
   }
-  if(col === 'logged_at' || col === 'last_received_date' || col === 'date_verified' || col === 'submitted_at'){
+  if(col === 'logged_at' || col === 'last_received_date' || col === 'date_verified' || col === 'submitted_at' || col === 'voided_at'){
     try { return new Date(value).toLocaleString(); } catch(e){ return escapeHtml(value); }
   }
   return escapeHtml(value);
@@ -292,6 +293,7 @@ function render(){
   const showApprove = APPROVABLE_TABLES.indexOf(currentTable) !== -1;
   const showFilters = FILTERABLE_TABLES.indexOf(currentTable) !== -1;
   const showRawData = currentTable === 'reagent_master';
+  const showVoid = currentTable === 'lot_to_lot_reports';
   document.getElementById('filterInstrument').style.display = showFilters ? '' : 'none';
   document.getElementById('filterItem').style.display = showFilters ? '' : 'none';
   document.getElementById('filterStatus').style.display = showFilters ? '' : 'none';
@@ -299,7 +301,7 @@ function render(){
   updatePendingBanner();
 
   const head = document.getElementById('tableHead');
-  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showRawData ? '<th>Raw Data</th>' : '') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
+  head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showRawData ? '<th>Raw Data</th>' : '') + (showApprove ? '<th>Approve</th>' : '') + (showVoid ? '<th>Void</th>' : '') + '</tr>';
 
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const instFilter = showFilters ? document.getElementById('filterInstrument').value : '';
@@ -338,6 +340,11 @@ function render(){
         ? '<td class="approve-cell"><button data-preview-btn>Preview</button><br><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
         : '<td><span style="color:#bbb;">--</span></td>';
     }
+    if(showVoid){
+      html += row.status !== 'Voided'
+        ? '<td class="approve-cell"><input type="text" placeholder="Your name" data-void-name-input><br><input type="text" placeholder="Reason (optional)" data-void-reason-input><br><button data-void-btn>Void</button><div class="approve-msg" data-void-msg></div></td>'
+        : '<td><span style="color:#bbb;">--</span></td>';
+    }
     tr.innerHTML = html;
     if(showApprove && canApprove(row)){
       tr.querySelector('[data-approve-btn]').addEventListener('click', function(){
@@ -345,6 +352,11 @@ function render(){
       });
       tr.querySelector('[data-preview-btn]').addEventListener('click', function(){
         preview(row, tr);
+      });
+    }
+    if(showVoid && row.status !== 'Voided'){
+      tr.querySelector('[data-void-btn]').addEventListener('click', function(){
+        voidReport(row, tr);
       });
     }
     body.appendChild(tr);
@@ -495,6 +507,51 @@ function approve(row, tr){
   })
   .finally(function(){
     document.getElementById('pdf-render-target').innerHTML = '';
+  });
+}
+
+/**
+ * Voids a lot-to-lot report (wrong item, wrong data, accidental
+ * submission/approval, etc.) instead of deleting it -- the row stays in
+ * the database with who voided it, when, and why, consistent with not
+ * silently erasing lab records. If this was the most recent report for
+ * that instrument/category/item, the server-side handler also rolls
+ * Reagent Master's current-state row back to whatever the next most
+ * recent report says (or to "Pending verification" if none remain).
+ */
+function voidReport(row, tr){
+  const nameInput = tr.querySelector('[data-void-name-input]');
+  const reasonInput = tr.querySelector('[data-void-reason-input]');
+  const msgEl = tr.querySelector('[data-void-msg]');
+  const btn = tr.querySelector('[data-void-btn]');
+  const voidedBy = nameInput.value.trim();
+  if(!voidedBy){
+    msgEl.textContent = 'Enter your name first.';
+    return;
+  }
+  if(!confirm('Void this ' + (row.item || 'report') + ' lot-to-lot report? It will stay on record as voided, not deleted.')){
+    return;
+  }
+  btn.disabled = true;
+  msgEl.textContent = 'Voiding...';
+
+  fetch('/api/approve?action=void', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      historyId: row.id,
+      voidedBy: voidedBy,
+      voidReason: reasonInput.value.trim(),
+    })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.error) throw new Error(d.error);
+    load(currentTable);
+  })
+  .catch(function(err){
+    msgEl.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
   });
 }
 
