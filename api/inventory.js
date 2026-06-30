@@ -14,6 +14,8 @@ const nodemailer = require('nodemailer');
  * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
+ * POST /api/inventory?action=save-catalog-sheet     -> save a client-generated "Print Catalog Sheet" PDF to Storage + catalog_sheet_history (cloud-only, no local download)
+ * GET  /api/inventory?action=catalog-sheet-history  -> list past catalog sheet generations, most recent first
  */
 module.exports = async (req, res) => {
   try {
@@ -21,6 +23,12 @@ module.exports = async (req, res) => {
 
     if (req.method === 'GET' && action === 'list-orders') {
       const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return res.status(200).json(data);
+    }
+
+    if (req.method === 'GET' && action === 'catalog-sheet-history') {
+      const { data, error } = await supabase.from('catalog_sheet_history').select('*').order('generated_at', { ascending: false }).limit(100);
       if (error) throw error;
       return res.status(200).json(data);
     }
@@ -223,6 +231,37 @@ module.exports = async (req, res) => {
       if (pdfUrlErr) throw pdfUrlErr;
 
       return res.status(200).json({ pdf_url: urlData.publicUrl });
+    }
+
+    // "Print Catalog Sheet" on the Inventory page is cloud-only by design
+    // (no local download) -- the generated PDF is saved straight to the
+    // same public "reports" Storage bucket used for order PDFs, with a
+    // history row so it's browsable from the Catalog Sheets tab.
+    if (req.method === 'POST' && action === 'save-catalog-sheet') {
+      const { pdfBase64, generatedBy, itemCount, filterSummary } = req.body;
+      if (!pdfBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
+
+      const path = 'catalog-sheet_' + Date.now() + '.pdf';
+      const { error: uploadErr } = await supabase.storage
+        .from('reports')
+        .upload(path, Buffer.from(pdfBase64, 'base64'), { contentType: 'application/pdf' });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('reports').getPublicUrl(path);
+
+      const { data: historyRow, error: historyErr } = await supabase
+        .from('catalog_sheet_history')
+        .insert({
+          generated_by: generatedBy || null,
+          item_count: itemCount || null,
+          filter_summary: filterSummary || null,
+          pdf_url: urlData.publicUrl,
+        })
+        .select()
+        .single();
+      if (historyErr) throw historyErr;
+
+      return res.status(200).json(historyRow);
     }
 
     if (req.method === 'POST' && action === 'send-email') {
