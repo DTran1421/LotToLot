@@ -193,6 +193,7 @@
       <button type="button" class="toolbar-btn" onclick="collapseAllGroups()">Collapse all</button>
       <button type="button" class="toolbar-btn" onclick="expandAllGroups()">Expand all</button>
       <button type="button" class="toolbar-btn" onclick="startNewCount()">Start New Count</button>
+      <button type="button" class="toolbar-btn" onclick="printCatalogSheet()">Print Catalog Sheet</button>
       <span class="save-status" id="saveStatus">All changes saved</span>
       <div class="count" id="count"></div>
     </div>
@@ -1250,6 +1251,132 @@ function closeOrderModal(){
  * Purchase Order layout with Ship To/Bill To blocks and per-line pricing,
  * modeled on the PO format that vendor actually sent.
  */
+
+/**
+ * "Print Catalog Sheet" -- generates a clean, vector-text PDF (jsPDF +
+ * autoTable, same approach used for reference-sheets.html -- no DOM
+ * screenshot, so no risk of the browser's text-link auto-detection
+ * staining reference numbers, and autoTable owns wrapping/pagination
+ * math directly) of exactly what's currently visible on screen: same
+ * search/storage-location/low-stock/unreviewed filters, same grouping
+ * by analyzer, same per-row sort -- so "Print" really does mean "print
+ * the page", not a separately-defined export. Group collapse/expand
+ * state on screen is ignored, though -- a group being visually
+ * collapsed shouldn't mean its rows are silently left off the sheet.
+ */
+function printCatalogSheet(){
+  const filterText = document.getElementById('search').value.trim().toLowerCase();
+  const lowOnly = document.getElementById('lowStockOnly').checked;
+  const unreviewedOnly = document.getElementById('unreviewedOnly').checked;
+  const locationFilter = document.getElementById('filterStorageLocation').value;
+
+  const filtered = allRows.filter(function(r){
+    if(lowOnly && !isLowStock(r)) return false;
+    if(unreviewedOnly && r.last_reviewed_at) return false;
+    if(locationFilter && r.storage_location !== locationFilter) return false;
+    if(!filterText) return true;
+    const haystack = (r.analyzer + ' ' + r.category + ' ' + r.item + ' ' + (r.manufacturer_ref||'') + ' ' + (r.mckesson_ref||'') + ' ' + (r.pack_size||'') + ' ' + (r.storage_location||'')).toLowerCase();
+    return haystack.indexOf(filterText) !== -1;
+  });
+
+  if(!filtered.length){
+    alert('No items match the current filters -- nothing to print.');
+    return;
+  }
+
+  const groups = groupByAnalyzer(filtered);
+  const groupNames = Object.keys(groups).sort(function(a, b){ return a.localeCompare(b); });
+
+  function reviewedCellText(r){
+    if(!r.last_reviewed_at) return 'Not yet';
+    const datePart = fmtDate(r.last_reviewed_at);
+    return r.reviewed_by ? ('Yes - ' + datePart + ' - ' + r.reviewed_by) : ('Yes - ' + datePart);
+  }
+
+  const bodyRows = [];
+  groupNames.forEach(function(name){
+    const groupRows = sortRows(groups[name]);
+    const reviewedCount = groupRows.filter(function(r){ return !!r.last_reviewed_at; }).length;
+    bodyRows.push([{
+      content: name + '  (' + groupRows.length + ' item' + (groupRows.length === 1 ? '' : 's') + ', ' + reviewedCount + '/' + groupRows.length + ' reviewed)',
+      colSpan: 6,
+      styles: { fillColor: [28, 63, 99], textColor: 255, fontStyle: 'bold', fontSize: 9.5, halign: 'left' }
+    }]);
+    groupRows.forEach(function(r){
+      bodyRows.push([
+        r.item || '',
+        r.category || '',
+        r.manufacturer_ref || '--',
+        r.storage_location || '--',
+        r.storage_temperature || '--',
+        reviewedCellText(r)
+      ]);
+    });
+  });
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  const PAGE_W = 792, PAGE_H = 612, MARGIN = 32;
+  const HEADER_H = 56;
+  const generatedStr = new Date().toLocaleString();
+
+  const filterParts = [];
+  if(locationFilter) filterParts.push('Location: ' + locationFilter);
+  if(lowOnly) filterParts.push('Below par only');
+  if(unreviewedOnly) filterParts.push('Not yet reviewed only');
+  if(filterText) filterParts.push('Search: "' + filterText + '"');
+  const filterSummary = filterParts.length ? filterParts.join(' \u00b7 ') : 'All items';
+
+  function drawChrome(data){
+    doc.setFillColor(17, 43, 71);
+    doc.rect(0, 0, PAGE_W, HEADER_H, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text('ALTRU DIAGNOSTICS \u2014 Catalog Sheet', MARGIN, 24);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(207, 224, 240);
+    doc.text(filterSummary, MARGIN, 40);
+    doc.setFontSize(8);
+    doc.text(filtered.length + ' item' + (filtered.length === 1 ? '' : 's') + ' \u00b7 Generated ' + generatedStr, PAGE_W - MARGIN, 24, { align: 'right' });
+    doc.text('Page ' + data.pageNumber, PAGE_W - MARGIN, 40, { align: 'right' });
+  }
+
+  doc.autoTable({
+    startY: HEADER_H + 14,
+    margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 14, bottom: 24 },
+    rowPageBreak: 'avoid',
+    head: [['Item', 'Item Type', 'MFR Ref', 'Location', 'Temperature', 'Reviewed']],
+    body: bodyRows,
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4.5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
+    headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    alternateRowStyles: { fillColor: [238, 242, 246] },
+    columnStyles: {
+      0: { cellWidth: 195 },
+      1: { cellWidth: 85 },
+      2: { cellWidth: 100 },
+      3: { cellWidth: 155 },
+      4: { cellWidth: 80 },
+      5: { cellWidth: 'auto' }
+    },
+    didParseCell: function(data){
+      if(data.section === 'body' && data.column.index === 5){
+        var raw = String(data.cell.raw || '');
+        if(raw === 'Not yet'){
+          data.cell.styles.textColor = [179, 38, 30];
+          data.cell.styles.fontStyle = 'bold';
+        } else if(raw.indexOf('Yes') === 0){
+          data.cell.styles.textColor = [27, 122, 61];
+        }
+      }
+    },
+    didDrawPage: drawChrome
+  });
+
+  doc.save('ALTRU_Catalog_Sheet_' + new Date().toISOString().slice(0,10) + '.pdf');
+}
+
 
 function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
   const { jsPDF } = window.jspdf;
