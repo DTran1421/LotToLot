@@ -350,34 +350,85 @@
   // Normalizes to lowercase words for comparison -- not a real fuzzy-match
   // library, just enough to surface a sensible pre-selected guess. The tech
   // always reviews and can override every match before anything gets logged.
+  // Words that, on their own, don't distinguish one catalog product from
+  // another -- either a manufacturer/brand name shared across many
+  // unrelated products, or a generic descriptor (control, level, reagent,
+  // solution...) reused across many distinct product families. Built FROM
+  // DATA: every word appearing in 4+ distinct catalog items, via
+  //   SELECT word, count(DISTINCT id) FROM (item + manufacturer_name
+  //   tokens) GROUP BY word HAVING count(DISTINCT id) >= 4
+  // against the live catalog. Without this filter, a manifest line like
+  // "Multiqual Level 2" could score a confident-looking match against
+  // "Multiqual Level 1" purely on the shared words "multiqual"+"level" --
+  // logging the wrong catalog item's lot/quantity with no human review,
+  // exactly the failure mode that left Needs Review (Browse Data) looking
+  // broken: almost nothing distinctive enough to fail a match ever reached
+  // the queue, because nearly anything could limp past a single shared
+  // generic word.
+  var MATCH_STOPWORDS = {
+    beckman:1, coulter:1, biorad:1, euroimmun:1, brand:1, laboratories:1, mckesson:1,
+    diazyme:1, bioscience:1, tosoh:1, audit:1, microcontrols:1,
+    control:1, level:1, solution:1, immunoassay:1, plus:1, chemistry:1, reagent:1,
+    sample:1, specialty:1, total:1, wash:1, cups:1, acid:1, buffer:1, check:1, free:1,
+    pack:1, serum:1, set:1, system:1, vitamin:1, ise:1, uibc:1, urine:1
+  };
+
   function normalizeForMatch(s){
     return (s||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   }
 
+  function distinctiveWords(s){
+    return normalizeForMatch(s).split(' ').filter(function(w){
+      return (w.length > 2 && !MATCH_STOPWORDS[w]) || /^\d+$/.test(w);
+    });
+  }
+
+  // Returns {score, overlap} -- score scales with how many DISTINCT,
+  // non-generic words overlap. A single distinctive word (e.g.
+  // "Cystatin", "Homocysteine") is real evidence and scores high enough
+  // to pass on its own; each further overlapping word adds confidence.
   function scoreMatch(extracted, row){
     var ref = normalizeForMatch(extracted.referenceNumber);
     if(ref){
-      if(row.manufacturer_ref && normalizeForMatch(row.manufacturer_ref) === ref) return 100;
-      if(row.mckesson_ref && normalizeForMatch(row.mckesson_ref) === ref) return 100;
+      if(row.manufacturer_ref && normalizeForMatch(row.manufacturer_ref) === ref) return {score:100, overlap:0};
+      if(row.mckesson_ref && normalizeForMatch(row.mckesson_ref) === ref) return {score:100, overlap:0};
     }
-    var a = normalizeForMatch(extracted.itemDescription);
-    var b = normalizeForMatch((row.item||'') + ' ' + (row.manufacturer_name||''));
-    if(!a || !b) return 0;
-    var aw = a.split(' ').filter(function(w){ return w.length > 2; });
+    var aw = distinctiveWords(extracted.itemDescription);
     var bwSet = {};
-    b.split(' ').forEach(function(w){ if(w.length > 2) bwSet[w] = true; });
+    distinctiveWords((row.item||'') + ' ' + (row.manufacturer_name||'')).forEach(function(w){ bwSet[w] = true; });
+    if(!aw.length || !Object.keys(bwSet).length) return {score:0, overlap:0};
     var overlap = 0;
     aw.forEach(function(w){ if(bwSet[w]) overlap++; });
-    return overlap > 0 ? Math.min(80, overlap * 20) : 0;
+    return { score: overlap > 0 ? Math.min(95, 60 + (overlap-1)*20) : 0, overlap: overlap };
   }
 
+  // A reference-number match always wins outright. Otherwise requires a
+  // text-match score of at least 60 (one genuinely distinctive overlapping
+  // word) AND no other catalog row scoring within 15 points of the top --
+  // a near-tie is exactly the "...Level 1 vs ...Level 2 vs ...Level 3"
+  // situation that must go to a human instead of guessing between
+  // near-identical products.
   function findBestMatch(extracted, catalog){
-    var best = null, bestScore = 0;
-    catalog.forEach(function(row){
-      var s = scoreMatch(extracted, row);
-      if(s > bestScore){ bestScore = s; best = row; }
-    });
-    return bestScore >= 20 ? best : null;
+    var ref = normalizeForMatch(extracted.referenceNumber);
+    if(ref){
+      for(var i=0;i<catalog.length;i++){
+        var row = catalog[i];
+        if((row.manufacturer_ref && normalizeForMatch(row.manufacturer_ref) === ref) ||
+           (row.mckesson_ref && normalizeForMatch(row.mckesson_ref) === ref)){
+          return row;
+        }
+      }
+    }
+    var scored = catalog
+      .map(function(row){ var s = scoreMatch(extracted, row); return { row: row, score: s.score }; })
+      .filter(function(r){ return r.score > 0; })
+      .sort(function(a,b){ return b.score - a.score; });
+    if(!scored.length) return null;
+    var top = scored[0];
+    if(top.score < 60) return null;
+    var runnerUp = scored[1];
+    if(runnerUp && (top.score - runnerUp.score) < 15) return null; // ambiguous near-tie -- punt to review
+    return top.row;
   }
 
   // Only accepts dates the model already gave us in clean ISO form -- if it
