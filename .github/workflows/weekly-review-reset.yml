@@ -1,0 +1,25 @@
+name: Weekly Reviewed-Column Reset
+
+# Clears last_reviewed_at on every inventory row every Sunday at 2 AM
+# Central, starting a fresh count cycle automatically -- same effect as
+# manually clicking "Start New Count" on the Inventory page.
+#
+# Cron is always UTC and GitHub Actions doesn't auto-adjust for daylight
+# saving, so this fires at 2 AM CDT (summer) / 1 AM CST (winter) -- a
+# 1-hour drift twice a year, harmless for a task meant to run in the
+# middle of the night either way.
+
+on:
+  schedule:
+    - cron: '0 7 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  reset-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset Reviewed column via existing reset-review API action
+        run: |
+          curl -sf -X POST "https://lot-to-lot.vercel.app/api/inventory?action=reset-review" > /dev/null \
+            && echo "Weekly review reset succeeded" \
+            || (echo "Weekly review reset FAILED" && exit 1)
