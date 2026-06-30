@@ -107,10 +107,13 @@
       <div class="tab" data-table="catalog">Catalog</div>
       <div class="tab" data-table="needs_review">Needs Review</div>
     </div>
+    <div id="pendingBanner" onclick="showPendingOnly()" style="display:none;cursor:pointer;background:#fff3cd;border:1px solid #f0d28a;border-left:4px solid #b8860b;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;font-weight:600;color:#7a5a0a;">
+    </div>
     <div class="toolbar" id="genericToolbar">
       <input type="text" id="search" placeholder="Filter rows...">
       <select id="filterInstrument"><option value="">All instruments</option></select>
       <select id="filterItem"><option value="">All items</option></select>
+      <select id="filterStatus"><option value="">All statuses</option></select>
       <div class="count" id="count"></div>
     </div>
     <div class="table-scroll" id="genericTableScroll">
@@ -157,6 +160,20 @@ var COLUMN_LABELS = {
 // Which tables get the Instrument/Item filter dropdowns + inline Approve column.
 var FILTERABLE_TABLES = ['reagent_master','lot_to_lot_reports'];
 var APPROVABLE_TABLES = ['reagent_master','lot_to_lot_reports'];
+
+// Status value(s) that represent "needs action" for the prominent banner +
+// quick filter, per table. reagent_master's 'Pending verification' is what
+// actually means "this item needs a lot-to-lot comparison run" -- that's
+// the specific thing the banner surfaces front and center, since it was
+// previously buried in a status column with no dedicated way to isolate it.
+var PENDING_STATUS_BY_TABLE = {
+  reagent_master: ['Pending verification', 'Pending Review', 'Failed - needs investigation'],
+  lot_to_lot_reports: ['Pending Review', 'Failed - needs investigation'],
+};
+var PENDING_BANNER_LABEL = {
+  reagent_master: function(n){ return '\ud83d\udccc ' + n + ' item' + (n===1?'':'s') + ' with outstanding lot-to-lot work (needs comparison, pending approval, or failed) \u2014 click to view'; },
+  lot_to_lot_reports: function(n){ return '\ud83d\udccc ' + n + ' report' + (n===1?'':'s') + ' awaiting approval or investigation \u2014 click to view'; },
+};
 
 function escapeHtml(s){
   const d = document.createElement('div');
@@ -227,13 +244,47 @@ function canApprove(row){
 function populateFilterDropdowns(){
   const instSel = document.getElementById('filterInstrument');
   const itemSel = document.getElementById('filterItem');
+  const statusSel = document.getElementById('filterStatus');
   const instruments = [...new Set(currentRows.map(function(r){ return r.instrument; }))].sort();
   const items = [...new Set(currentRows.map(function(r){ return r.item; }))].sort();
-  const prevInst = instSel.value, prevItem = itemSel.value;
+  const statuses = [...new Set(currentRows.map(function(r){ return r.status; }).filter(Boolean))].sort();
+  const prevInst = instSel.value, prevItem = itemSel.value, prevStatus = statusSel.value;
   instSel.innerHTML = '<option value="">All instruments</option>' + instruments.map(function(i){ return '<option value="'+escapeHtml(i)+'">'+escapeHtml(i)+'</option>'; }).join('');
   itemSel.innerHTML = '<option value="">All items</option>' + items.map(function(i){ return '<option value="'+escapeHtml(i)+'">'+escapeHtml(i)+'</option>'; }).join('');
+  statusSel.innerHTML = '<option value="">All statuses</option>' +
+    (PENDING_STATUS_BY_TABLE[currentTable] ? '<option value="__pending__">\u2b50 Pending only</option>' : '') +
+    statuses.map(function(s){
+      var label = (STATUS_DISPLAY[s] || { label: s }).label;
+      return '<option value="'+escapeHtml(s)+'">'+escapeHtml(label)+'</option>';
+    }).join('');
   instSel.value = instruments.indexOf(prevInst) !== -1 ? prevInst : '';
   itemSel.value = items.indexOf(prevItem) !== -1 ? prevItem : '';
+  statusSel.value = statuses.indexOf(prevStatus) !== -1 ? prevStatus : '';
+}
+
+function pendingCountForCurrentTable(){
+  var pendingStatuses = PENDING_STATUS_BY_TABLE[currentTable];
+  if(!pendingStatuses) return 0;
+  return currentRows.filter(function(r){ return pendingStatuses.indexOf(r.status) !== -1; }).length;
+}
+
+function updatePendingBanner(){
+  var banner = document.getElementById('pendingBanner');
+  var pendingStatuses = PENDING_STATUS_BY_TABLE[currentTable];
+  if(!pendingStatuses){ banner.style.display = 'none'; return; }
+  var n = pendingCountForCurrentTable();
+  if(n === 0){ banner.style.display = 'none'; return; }
+  banner.textContent = PENDING_BANNER_LABEL[currentTable](n);
+  banner.style.display = 'block';
+}
+
+// Sets the status filter to whichever value(s) this table's banner represents
+// and re-renders -- if there's more than one pending status for this table
+// (e.g. lot_to_lot_reports has two), clears any single-status selection and
+// relies on the dedicated pending-status check in the filter itself instead.
+function showPendingOnly(){
+  document.getElementById('filterStatus').value = '__pending__';
+  render();
 }
 
 function render(){
@@ -243,6 +294,9 @@ function render(){
   const showRawData = currentTable === 'reagent_master';
   document.getElementById('filterInstrument').style.display = showFilters ? '' : 'none';
   document.getElementById('filterItem').style.display = showFilters ? '' : 'none';
+  document.getElementById('filterStatus').style.display = showFilters ? '' : 'none';
+
+  updatePendingBanner();
 
   const head = document.getElementById('tableHead');
   head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + (showRawData ? '<th>Raw Data</th>' : '') + (showApprove ? '<th>Approve</th>' : '') + '</tr>';
@@ -250,10 +304,17 @@ function render(){
   const filterText = document.getElementById('search').value.trim().toLowerCase();
   const instFilter = showFilters ? document.getElementById('filterInstrument').value : '';
   const itemFilter = showFilters ? document.getElementById('filterItem').value : '';
+  const statusFilter = showFilters ? document.getElementById('filterStatus').value : '';
+  const pendingStatuses = PENDING_STATUS_BY_TABLE[currentTable] || [];
 
   const filtered = currentRows.filter(function(row){
     if(instFilter && row.instrument !== instFilter) return false;
     if(itemFilter && row.item !== itemFilter) return false;
+    if(statusFilter === '__pending__'){
+      if(pendingStatuses.indexOf(row.status) === -1) return false;
+    } else if(statusFilter && row.status !== statusFilter){
+      return false;
+    }
     if(!filterText) return true;
     return cols.some(function(c){
       const v = row[c];
@@ -446,6 +507,7 @@ function load(table){
     document.getElementById('genericToolbar').style.display = 'none';
     document.getElementById('genericTableScroll').style.display = 'none';
     document.getElementById('needsReviewView').style.display = 'block';
+    document.getElementById('pendingBanner').style.display = 'none';
     loadNeedsReview();
     return;
   }
@@ -712,6 +774,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('filterInstrument').addEventListener('change', render);
 document.getElementById('filterItem').addEventListener('change', render);
+document.getElementById('filterStatus').addEventListener('change', render);
 
 const SUPABASE_URL = "https://usugysirjyyoqmlakkbc.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
