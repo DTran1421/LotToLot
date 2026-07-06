@@ -91,6 +91,15 @@
   <div class="card">
     <h2 id="formTitle">Add new item</h2>
     <input type="hidden" id="editId">
+
+    <div style="background:#f2f6fa;border:1px solid #dbe2e8;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Import from McKesson URL</label>
+        <input id="f_mckesson_import_url" placeholder="https://mms.mckesson.com/product/..." style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+      </div>
+      <button type="button" onclick="importFromMcKesson()" style="margin-top:20px;white-space:nowrap;">Import &amp; Pre-fill</button>
+      <p class="small" id="importStatus" style="margin:20px 0 0;width:100%;"></p>
+    </div>
     <div class="grid cols-5">
       <div><label>Instrument</label><input id="f_analyzer" list="instrument-list" placeholder="e.g. Beckman Coulter DxC 700 AU"></div>
       <div><label>Material type</label><input id="f_category" list="category-list" placeholder="e.g. Reagent"></div>
@@ -313,6 +322,70 @@ function printSelectedColumns(){
   window.print();
 }
 
+function importFromMcKesson(){
+  const url = document.getElementById('f_mckesson_import_url').value.trim();
+  const statusEl = document.getElementById('importStatus');
+  if(!url){ statusEl.textContent = 'Paste a mms.mckesson.com/product/... URL first.'; return; }
+  if(!url.includes('mms.mckesson.com/product/')){
+    statusEl.textContent = 'That doesn\'t look like a McKesson product URL. It should start with https://mms.mckesson.com/product/...';
+    return;
+  }
+  statusEl.textContent = 'Fetching...';
+  fetch('/api/catalog?action=mckesson-lookup&url=' + encodeURIComponent(url))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.error){ statusEl.textContent = 'Error: ' + d.error; return; }
+
+      // Pre-fill whatever came back -- don't overwrite fields the user
+      // has already typed into (so they can import, tweak, then import
+      // again if they want to fill in one field at a time).
+      function fill(id, val){ if(val && !document.getElementById(id).value) document.getElementById(id).value = val; }
+      fill('f_manufacturer_name', d.manufacturer_name);
+      fill('f_manufacturer_ref', d.manufacturer_ref);
+      fill('f_mckesson_ref', d.mckesson_ref);
+      fill('f_mckesson_url', d.mckesson_url);
+      fill('f_item', d.item);
+      fill('f_pack_size', d.pack_size);
+      fill('f_storage_temperature', d.storage_temperature);
+      fill('f_vendor', d.vendor);
+
+      // Build a human-readable summary of what was/wasn't filled in.
+      const filled = [];
+      const skipped = [];
+      const fields = [
+        ['f_manufacturer_name','Manufacturer name'],
+        ['f_manufacturer_ref','Manufacturer ref'],
+        ['f_mckesson_ref','McKesson ref'],
+        ['f_item','Item name'],
+        ['f_pack_size','Pack size'],
+        ['f_storage_temperature','Storage temp'],
+      ];
+      fields.forEach(function(pair){
+        if(document.getElementById(pair[0]).value) filled.push(pair[1]);
+        else skipped.push(pair[1]);
+      });
+
+      let msg = 'Filled: ' + filled.join(', ') + '.';
+      if(skipped.length) msg += ' Not found: ' + skipped.join(', ') + '.';
+
+      // Always warn about fields that must be filled manually.
+      const manual = [];
+      if(!document.getElementById('f_analyzer').value) manual.push('Instrument');
+      if(!document.getElementById('f_category').value) manual.push('Material type');
+      if(!document.getElementById('f_storage_location').value) manual.push('Storage location');
+      if(manual.length) msg += ' Fill in manually: ' + manual.join(', ') + '.';
+
+      // Always warn about storage temperature -- McKesson\'s value is approximate.
+      if(d.storage_requirements_raw) msg += ' Storage temp is based on McKesson\'s "' + d.storage_requirements_raw + '" -- verify the exact range against the IFU before saving.';
+
+      // Show analyzer hint if available.
+      if(d.for_use_with) msg += ' Analyzer hint from McKesson: "' + d.for_use_with + '".';
+
+      statusEl.textContent = msg;
+    })
+    .catch(function(err){ statusEl.textContent = 'Error: ' + err.message; });
+}
+
 function resetForm(){
   document.getElementById('editId').value = '';
   document.getElementById('formTitle').textContent = 'Add new item';
@@ -320,6 +393,8 @@ function resetForm(){
     document.getElementById(id).value = '';
   });
   document.getElementById('formStatus').textContent = '';
+  document.getElementById('f_mckesson_import_url').value = '';
+  document.getElementById('importStatus').textContent = '';
 }
 
 function editRow(id){
