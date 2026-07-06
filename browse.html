@@ -36,6 +36,10 @@
   .pill.fail{background:var(--bad-bg);color:var(--bad);}
   .pill.verified{background:var(--good-bg);color:var(--good);}
   .pill.pass{background:var(--good-bg);color:var(--good);}
+  .lot-history-child td{background:#f8fafc!important;font-size:12px;color:var(--muted);padding-top:3px!important;padding-bottom:3px!important;}
+  .lot-history-child td:first-child{padding-left:28px!important;}
+  .lot-expand-btn{background:none;border:1px solid var(--line);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .lot-expand-btn:hover{background:var(--neutral-bg);}
   .empty{text-align:center;color:var(--muted);padding:30px 0;}
   a.pdf-link{color:var(--navy);}
   .approve-cell input{width:110px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12px;}
@@ -149,6 +153,7 @@
 <script>
 var currentTable = 'reagent_master';
 var currentRows = [];
+var expandedLotItems = new Set(); // keys: instrument|category|item
 
 var COLUMN_LABELS = {
   reagent_master: ['instrument','category','item','manufacturer_ref','mckesson_ref','current_lot','last_received_date','status','comparison_url','performed_by','report_pdf_url','verified_by','date_verified','notes'],
@@ -327,45 +332,115 @@ function render(){
   const body = document.getElementById('tableBody');
   body.innerHTML = '';
   const rawDataInits = [];
-  filtered.forEach(function(row){
-    const tr = document.createElement('tr');
-    let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
-    if(showRawData){
-      const domId = 'rd-' + row.id;
-      html += '<td>' + RawData.render(domId, row.instrument, row.category, row.item) + '</td>';
-      rawDataInits.push([domId, row.instrument, row.category, row.item]);
-    }
-    if(showApprove){
+
+  // lot_to_lot_reports uses a grouped view: one summary row per
+  // instrument/category/item (newest report on top), with an expand
+  // toggle to reveal older entries underneath. All other tables keep
+  // the existing flat rendering.
+  if(currentTable === 'lot_to_lot_reports'){
+    // Sort newest first, then group.
+    const sorted = filtered.slice().sort(function(a,b){
+      return new Date(b.submitted_at) - new Date(a.submitted_at);
+    });
+    const groups = {}, groupOrder = [];
+    sorted.forEach(function(row){
+      const key = row.instrument + '|' + row.category + '|' + row.item;
+      if(!groups[key]){ groups[key] = []; groupOrder.push(key); }
+      groups[key].push(row);
+    });
+
+    function buildLotRow(row, isPrimary, groupKey, extraCount){
+      const tr = document.createElement('tr');
+      if(!isPrimary) tr.className = 'lot-history-child';
+      let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
+      // Approve column
       html += canApprove(row)
         ? '<td class="approve-cell"><button data-preview-btn>Preview</button><br><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
         : '<td><span style="color:#bbb;">--</span></td>';
-    }
-    if(showVoid){
+      // Void column
       html += row.status !== 'Voided'
         ? '<td class="approve-cell"><input type="text" placeholder="Your name" data-void-name-input><br><input type="text" placeholder="Reason (optional)" data-void-reason-input><br><button data-void-btn>Void</button><div class="approve-msg" data-void-msg></div></td>'
         : '<td><span style="color:#bbb;">--</span></td>';
+      // Expand/collapse toggle -- only on the primary row, only if there are older entries
+      if(isPrimary && extraCount > 0){
+        const isExpanded = expandedLotItems.has(groupKey);
+        html += '<td><button class="lot-expand-btn" data-expand-btn>' + (isExpanded ? '▲ Hide history' : '▼ ' + extraCount + ' older') + '</button></td>';
+      } else {
+        html += '<td></td>';
+      }
+      tr.innerHTML = html;
+      if(canApprove(row)){
+        tr.querySelector('[data-approve-btn]').addEventListener('click', function(){ approve(row, tr); });
+        tr.querySelector('[data-preview-btn]').addEventListener('click', function(){ preview(row, tr); });
+      }
+      if(row.status !== 'Voided'){
+        tr.querySelector('[data-void-btn]').addEventListener('click', function(){ voidReport(row, tr); });
+      }
+      if(isPrimary && extraCount > 0){
+        tr.querySelector('[data-expand-btn]').addEventListener('click', function(){
+          if(expandedLotItems.has(groupKey)) expandedLotItems.delete(groupKey);
+          else expandedLotItems.add(groupKey);
+          render();
+        });
+      }
+      return tr;
     }
-    tr.innerHTML = html;
-    if(showApprove && canApprove(row)){
-      tr.querySelector('[data-approve-btn]').addEventListener('click', function(){
-        approve(row, tr);
-      });
-      tr.querySelector('[data-preview-btn]').addEventListener('click', function(){
-        preview(row, tr);
-      });
-    }
-    if(showVoid && row.status !== 'Voided'){
-      tr.querySelector('[data-void-btn]').addEventListener('click', function(){
-        voidReport(row, tr);
-      });
-    }
-    body.appendChild(tr);
-  });
+
+    groupOrder.forEach(function(key){
+      const rows = groups[key];
+      body.appendChild(buildLotRow(rows[0], true, key, rows.length - 1));
+      if(expandedLotItems.has(key)){
+        rows.slice(1).forEach(function(row){
+          body.appendChild(buildLotRow(row, false, key, 0));
+        });
+      }
+    });
+
+    // Update header to include the expand column
+    const head = document.getElementById('tableHead');
+    head.innerHTML = '<tr>' + cols.map(function(c){ return '<th>' + niceLabel(c) + '</th>'; }).join('') + '<th>Approve</th><th>Void</th><th></th></tr>';
+
+  } else {
+    // All other tables -- unchanged flat rendering
+    filtered.forEach(function(row){
+      const tr = document.createElement('tr');
+      let html = cols.map(function(c){ return '<td>' + formatCell(c, row[c]) + '</td>'; }).join('');
+      if(showRawData){
+        const domId = 'rd-' + row.id;
+        html += '<td>' + RawData.render(domId, row.instrument, row.category, row.item) + '</td>';
+        rawDataInits.push([domId, row.instrument, row.category, row.item]);
+      }
+      if(showApprove){
+        html += canApprove(row)
+          ? '<td class="approve-cell"><button data-preview-btn>Preview</button><br><input type="text" placeholder="Your name" data-name-input><br><button data-approve-btn>Approve</button><div class="approve-msg" data-msg></div></td>'
+          : '<td><span style="color:#bbb;">--</span></td>';
+      }
+      if(showVoid){
+        html += row.status !== 'Voided'
+          ? '<td class="approve-cell"><input type="text" placeholder="Your name" data-void-name-input><br><input type="text" placeholder="Reason (optional)" data-void-reason-input><br><button data-void-btn>Void</button><div class="approve-msg" data-void-msg></div></td>'
+          : '<td><span style="color:#bbb;">--</span></td>';
+      }
+      tr.innerHTML = html;
+      if(showApprove && canApprove(row)){
+        tr.querySelector('[data-approve-btn]').addEventListener('click', function(){ approve(row, tr); });
+        tr.querySelector('[data-preview-btn]').addEventListener('click', function(){ preview(row, tr); });
+      }
+      if(showVoid && row.status !== 'Voided'){
+        tr.querySelector('[data-void-btn]').addEventListener('click', function(){ voidReport(row, tr); });
+      }
+      body.appendChild(tr);
+    });
+  }
   // Widgets only fetch their file list once they're actually in the DOM.
   rawDataInits.forEach(function(args){ RawData.init.apply(null, args); });
 
   document.getElementById('empty').style.display = filtered.length === 0 ? 'block' : 'none';
-  document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
+  if(currentTable === 'lot_to_lot_reports'){
+    const uniqueItems = new Set(filtered.map(function(r){ return r.instrument+'|'+r.category+'|'+r.item; })).size;
+    document.getElementById('count').textContent = uniqueItems + ' item' + (uniqueItems===1?'':'s') + ' (' + filtered.length + ' report' + (filtered.length===1?'':'s') + ' total)';
+  } else {
+    document.getElementById('count').textContent = filtered.length + ' of ' + currentRows.length + ' row(s)';
+  }
 }
 
 /**
@@ -560,6 +635,7 @@ var reviewCatalog = [];
 
 function load(table){
   currentTable = table;
+  expandedLotItems.clear();
   if(table === 'needs_review'){
     document.getElementById('genericToolbar').style.display = 'none';
     document.getElementById('genericTableScroll').style.display = 'none';
