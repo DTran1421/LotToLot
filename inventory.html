@@ -1449,19 +1449,20 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
   const now = new Date();
   const meta = vendorsByName[vendorName] || {};
   const priceRequired = !!meta.price_required;
+  const hasAddresses = !!(meta.ship_to && meta.bill_to);
 
   let startY = 76;
 
-  if(priceRequired){
+  if(hasAddresses){
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(17, 43, 71);
-    doc.text('PURCHASE ORDER - #' + poNumber, margin, 42);
+    doc.text((priceRequired ? 'PURCHASE ORDER - #' + poNumber : 'ORDER - ' + vendorName), margin, 42);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(110, 110, 110);
-    var headerMeta = 'Vendor: ' + vendorName + '   |   Generated ' + now.toLocaleString();
+    var headerMeta = (priceRequired ? 'Vendor: ' + vendorName + '   |   ' : '') + 'Generated ' + now.toLocaleString();
     var acctMatch = (meta.notes || '').match(/Account No[.#:\s]+([A-Za-z0-9-]+)/i);
     if(acctMatch) headerMeta += '   |   Account #' + acctMatch[1];
     doc.text(headerMeta, margin, 58);
