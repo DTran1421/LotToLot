@@ -1457,7 +1457,7 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(17, 43, 71);
-    doc.text((priceRequired ? 'PURCHASE ORDER - #' + poNumber : 'ORDER - ' + vendorName), margin, 42);
+    doc.text((priceRequired ? 'PURCHASE ORDER - #' + poNumber : 'ORDER #' + poNumber + (poNumber ? '' : ' - ' + vendorName)), margin, 42);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -1589,7 +1589,7 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
     doc.text(wrapped, margin + 46, finalY);
   }
 
-  const filename = (priceRequired ? 'PO_' + poNumber : (testMode ? 'TEST_order_' : 'order_') + Date.now()) + '.pdf';
+  const filename = (priceRequired || (hasAddresses && poNumber) ? 'PO_' + poNumber : (testMode ? 'TEST_order_' : 'order_') + Date.now()) + '.pdf';
   return Promise.resolve({ blob: doc.output('blob'), filename: filename });
 }
 
