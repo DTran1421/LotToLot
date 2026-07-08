@@ -1514,9 +1514,12 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
   }
 
   let grandTotal = 0;
+  const hasMckRef = !priceRequired && items.some(function(it){ return !!it.mckesson_ref; });
   const head = priceRequired
     ? [['Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty', 'Unit Price', 'Total']]
-    : [['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']];
+    : [hasMckRef
+        ? ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty']
+        : ['Material Type', 'Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty']];
 
   const body = items.map(function(it){
     if(priceRequired){
@@ -1531,14 +1534,14 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
         '$' + lineTotal.toFixed(2)
       ];
     }
-    return [
+    const row = [
       it.category || '--',
       it.item || '--',
       it.manufacturer_ref || '--',
-      it.mckesson_ref || '--',
-      it.pack_size || '--',
-      String(it.qty)
     ];
+    if(hasMckRef) row.push(it.mckesson_ref || '--');
+    row.push(it.pack_size || '--', String(it.qty));
+    return row;
   });
 
   doc.autoTable({
@@ -1552,11 +1555,15 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
       3: { halign: 'right', cellWidth: 32 },
       4: { halign: 'right' },
       5: { halign: 'right' }
-    } : {
+    } : hasMckRef ? {
       0: { cellWidth: 62 },
       2: { cellWidth: 58 },
       3: { cellWidth: 62 },
       5: { halign: 'right', cellWidth: 32 }
+    } : {
+      0: { cellWidth: 62 },
+      2: { cellWidth: 58 },
+      4: { halign: 'right', cellWidth: 32 }
     },
     tableWidth: 'auto'
   });
@@ -1595,15 +1602,21 @@ function copyTableForSpreadsheet(vendorName){
   // Real tab characters between columns -- this is what a PDF copy/paste
   // can't give you, since PDFs have no embedded column delimiters. Pasting
   // tab-separated text into Excel/Sheets splits it into cells correctly.
+  const hasMckRefCopy = !priceRequired && items.some(function(it){ return !!it.mckesson_ref; });
   const header = priceRequired
     ? ['Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty', 'Unit Price', 'Line Total'].join('\t')
-    : ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
+    : hasMckRefCopy
+      ? ['Material Type', 'Item', 'Mfr Ref #', 'McKesson Ref #', 'Pack/Unit Size', 'Qty'].join('\t')
+      : ['Material Type', 'Item', 'Mfr Ref #', 'Pack/Unit Size', 'Qty'].join('\t');
   const rows = items.map(function(it){
     if(priceRequired){
       const lineTotal = (it.unit_price || 0) * (it.qty || 0);
       return [it.item || '', it.manufacturer_ref || '', it.pack_size || '', it.qty, it.unit_price != null ? it.unit_price : '', lineTotal].join('\t');
     }
-    return [it.category || '', it.item || '', it.manufacturer_ref || '', it.mckesson_ref || '', it.pack_size || '', it.qty].join('\t');
+    const cols = [it.category || '', it.item || '', it.manufacturer_ref || ''];
+    if(hasMckRefCopy) cols.push(it.mckesson_ref || '');
+    cols.push(it.pack_size || '', it.qty);
+    return cols.join('\t');
   });
   const tsv = header + '\n' + rows.join('\n');
   navigator.clipboard.writeText(tsv).then(function(){
