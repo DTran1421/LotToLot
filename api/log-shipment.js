@@ -21,9 +21,37 @@ async function handleLogShipment(req, res) {
   const {
     instrument, category, item, manufacturerRef, mckessonRef,
     lotNumber, quantity, expirationDate, receivedBy, comments, manifestUploadId,
+    force,
   } = req.body;
   if (!instrument || !item || !lotNumber) {
     return res.status(400).json({ error: 'instrument, item, and lotNumber are required' });
+  }
+
+  // Duplicate detection: check if this exact lot number for this item was
+  // already logged in receiving_log. If so, warn before proceeding so two
+  // people don't both log the same arriving shipment. The client must
+  // re-submit with force:true to bypass (explicit acknowledgment required).
+  if (!force) {
+    const { data: dupRows, error: dupErr } = await supabase
+      .from('receiving_log')
+      .select('id, logged_at, received_by, quantity')
+      .eq('instrument', instrument)
+      .eq('item', item)
+      .eq('lot_number', lotNumber)
+      .order('logged_at', { ascending: false })
+      .limit(1);
+    if (dupErr) throw dupErr;
+    if (dupRows && dupRows.length > 0) {
+      const dup = dupRows[0];
+      return res.status(200).json({
+        isDuplicate: true,
+        previousLog: {
+          logged_at: dup.logged_at,
+          received_by: dup.received_by,
+          quantity: dup.quantity,
+        },
+      });
+    }
   }
 
   const { data: existingRows, error: selErr } = await supabase

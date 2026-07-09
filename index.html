@@ -213,7 +213,7 @@
     refTag.textContent = parts.join('  \u00b7  ') || 'No reference numbers on file';
   }
 
-  function submitForm(){
+  function submitForm(force){
     var btn = document.getElementById('submitBtn');
     var resultEl = document.getElementById('result');
     var instrument = document.getElementById('instrument').value;
@@ -236,7 +236,8 @@
       quantity: document.getElementById('quantity').value === '' ? null : Number(document.getElementById('quantity').value),
       expirationDate: document.getElementById('expirationDate').value,
       receivedBy: document.getElementById('receivedBy').value,
-      comments: document.getElementById('comments').value
+      comments: document.getElementById('comments').value,
+      force: !!force
     };
     if(!payload.lotNumber){
       resultEl.className = 'result show new';
@@ -257,6 +258,20 @@
       if(res.error){
         resultEl.className = 'result show new';
         resultEl.innerHTML = 'Error: ' + res.error;
+        return;
+      }
+      if(res.isDuplicate){
+        var prev = res.previousLog;
+        var when = prev.logged_at ? new Date(prev.logged_at).toLocaleString() : 'unknown time';
+        var who = prev.received_by || 'unknown';
+        var qty = prev.quantity != null ? ' (qty: ' + prev.quantity + ')' : '';
+        resultEl.className = 'result show new';
+        resultEl.innerHTML = '\u26a0\ufe0f <strong>Possible duplicate:</strong> Lot ' +
+          escapeHtml(document.getElementById('lotNumber').value) +
+          ' for <strong>' + escapeHtml(it.item) + '</strong> was already logged on ' + when + ' by ' + escapeHtml(who) + qty + '.' +
+          '<br><br>' +
+          '<button onclick="submitForm(true)" style="margin-right:8px;">Log anyway</button>' +
+          '<button onclick="this.closest(\'.result\').innerHTML=\'\'">Cancel</button>';
         return;
       }
       var cls = res.isNewLot ? (res.flaggable ? 'new' : 'info') : 'same';
