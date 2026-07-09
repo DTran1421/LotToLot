@@ -129,6 +129,7 @@ module.exports = async (req, res) => {
         .from('orders')
         .select('id, created_at, vendor, po_number, ordered_by, sent_at, sent_to, items, pdf_url')
         .gte('created_at', cutoff.toISOString())
+        .neq('hidden', true)
         .order('created_at', { ascending: false });
       if (ordErr) throw ordErr;
 

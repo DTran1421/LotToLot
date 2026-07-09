@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
     const action = req.query.action;
 
     if (req.method === 'GET' && action === 'list-orders') {
-      const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
+      const { data, error } = await supabase.from('orders').select('*').neq('hidden', true).order('created_at', { ascending: false }).limit(100);
       if (error) throw error;
       return res.status(200).json(data);
     }
