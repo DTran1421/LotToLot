@@ -107,6 +107,102 @@ module.exports = async (req, res) => {
       return await handleRawData(req, res);
     }
 
+    // Expected vs. received view for the Order Fulfillment tab in Browse Data.
+    // Pulls all explicitly placed orders from the last 90 days, computes an
+    // expected delivery date per order using the lab's vendor delivery rules,
+    // then infers fulfillment by matching receiving_log entries on
+    // manufacturer_ref after the order date.
+    //
+    // Delivery rules (vendor doesn't operate weekends, Mondays are slow):
+    //   Mon ordered → expect Thu (+ 3 days)
+    //   Tue ordered → expect Fri (+ 3 days)
+    //   Wed ordered → expect Fri (+ 2 days)
+    //   Thu ordered → expect following Tue (+ 5 days)
+    //   Fri ordered → expect following Tue (+ 4 days)
+    const DAYS_TO_ADD = [2, 3, 3, 2, 5, 4, 3]; // index by getDay() (Sun=0..Sat=6)
+
+    if (req.query.action === 'order-fulfillment') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+
+      const { data: orders, error: ordErr } = await supabase
+        .from('orders')
+        .select('id, created_at, vendor, po_number, ordered_by, sent_at, sent_to, items, pdf_url')
+        .gte('created_at', cutoff.toISOString())
+        .order('created_at', { ascending: false });
+      if (ordErr) throw ordErr;
+
+      const { data: receipts, error: recErr } = await supabase
+        .from('receiving_log')
+        .select('id, logged_at, item, manufacturer_ref, lot_number, quantity, received_by, instrument, category')
+        .gte('logged_at', cutoff.toISOString())
+        .order('logged_at', { ascending: false });
+      if (recErr) throw recErr;
+
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
+      const result = orders.map(order => {
+        const orderDate = new Date(order.created_at);
+        orderDate.setHours(0, 0, 0, 0);
+        const expectedBy = new Date(orderDate);
+        expectedBy.setDate(orderDate.getDate() + DAYS_TO_ADD[orderDate.getDay()]);
+
+        const lineItems = (order.items || []).map(lineItem => {
+          // Match receipts by manufacturer_ref, received after order placed
+          // and within 21 days (3 weeks -- anything later is a different order cycle).
+          const matched = receipts.filter(r =>
+            r.manufacturer_ref === lineItem.manufacturer_ref &&
+            new Date(r.logged_at) > new Date(order.created_at) &&
+            new Date(r.logged_at).getTime() - new Date(order.created_at).getTime() <= 21 * 86400000
+          );
+
+          let status;
+          if (matched.length > 0)        status = 'received';
+          else if (now <= expectedBy)     status = 'pending';
+          else                            status = 'overdue';
+
+          return {
+            catalog_id:       lineItem.catalog_id,
+            item:             lineItem.item,
+            analyzer:         lineItem.analyzer,
+            category:         lineItem.category,
+            manufacturer_ref: lineItem.manufacturer_ref,
+            pack_size:        lineItem.pack_size,
+            qty:              lineItem.qty,
+            status,
+            receipts: matched.map(r => ({
+              id:           r.id,
+              logged_at:    r.logged_at,
+              lot_number:   r.lot_number,
+              quantity:     r.quantity,
+              received_by:  r.received_by,
+            })),
+          };
+        });
+
+        const receivedCount = lineItems.filter(l => l.status === 'received').length;
+        const overdueCount  = lineItems.filter(l => l.status === 'overdue').length;
+
+        return {
+          id:           order.id,
+          created_at:   order.created_at,
+          vendor:       order.vendor,
+          po_number:    order.po_number,
+          ordered_by:   order.ordered_by,
+          sent_at:      order.sent_at,
+          pdf_url:      order.pdf_url,
+          expectedBy:   expectedBy.toISOString(),
+          lineItems,
+          receivedCount,
+          overdueCount,
+          totalCount:   lineItems.length,
+        };
+      });
+
+      return res.status(200).json(result);
+    }
+
     const table = req.query.table;
     if (!table || !TABLES[table]) {
       return res.status(400).json({ error: 'table must be one of: ' + Object.keys(TABLES).join(', ') });

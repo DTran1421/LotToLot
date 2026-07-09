@@ -48,6 +48,22 @@
   .approve-msg{font-size:11px;color:var(--muted);margin-top:3px;max-width:160px;}
   .pill.resolved{background:var(--good-bg);color:var(--good);}
   .pill.dismissed{background:var(--neutral-bg);color:var(--muted);}
+  .fulfillment-order{background:#fff;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden;}
+  .fulfillment-order-header{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none;}
+  .fulfillment-order-header:hover{background:var(--neutral-bg);}
+  .fulfillment-order-header h3{margin:0;font-size:14px;font-weight:700;color:var(--navy);flex:1;}
+  .fulfillment-order-header .fmeta{font-size:12px;color:var(--muted);}
+  .fulfillment-order-header .fprogress{font-size:12px;font-weight:600;white-space:nowrap;}
+  .fulfillment-order-body{display:none;}
+  .fulfillment-order-body.open{display:block;}
+  .fulfillment-line{display:grid;grid-template-columns:1fr 80px 70px auto;gap:8px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:12.5px;}
+  .fulfillment-line:nth-child(even){background:var(--neutral-bg);}
+  .fulfillment-line .fname{font-weight:600;}
+  .fulfillment-line .fdetail{font-size:11px;color:var(--muted);}
+  .fulfillment-receipt{font-size:11px;color:var(--good);margin-top:2px;}
+  .pill.overdue{background:#fde8e8;color:#b3261e;font-weight:700;}
+  .pill.pending-delivery{background:#fff3cd;color:#7a5a0a;}
+  .pill.received{background:var(--good-bg);color:var(--good);}
   .review-row{border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;}
   .review-row-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
   .review-extracted{font-size:13px;color:var(--ink);}
@@ -110,6 +126,7 @@
       <div class="tab" data-table="receiving_log">Receiving Log</div>
       <div class="tab" data-table="catalog">Catalog</div>
       <div class="tab" data-table="needs_review">Needs Review</div>
+      <div class="tab" data-table="order_fulfillment">Order Fulfillment</div>
     </div>
     <div id="pendingBanner" onclick="showPendingOnly()" style="display:none;cursor:pointer;background:#fff3cd;border:1px solid #f0d28a;border-left:4px solid #b8860b;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;font-weight:600;color:#7a5a0a;">
     </div>
@@ -145,6 +162,18 @@
         <option value="Reagent"><option value="Calibrator"><option value="Control">
         <option value="Chemical"><option value="Equipment"><option value="Misc"><option value="Linearity">
       </datalist>
+    </div>
+
+    <div id="fulfillmentView" style="display:none;">
+      <div class="toolbar">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="fulfillmentPendingOnly" checked onchange="renderFulfillment()">
+          Pending &amp; overdue only
+        </label>
+        <div class="count" id="fulfillmentCount"></div>
+      </div>
+      <div id="fulfillmentRows"></div>
+      <div class="empty" id="fulfillmentEmpty" style="display:none;">No orders in the last 90 days.</div>
     </div>
   </div>
 </div>
@@ -632,6 +661,109 @@ function voidReport(row, tr){
 
 var reviewQueueRows = [];
 var reviewCatalog = [];
+var fulfillmentOrders = [];
+
+/* ---------- Order Fulfillment ---------- */
+
+function loadFulfillment(){
+  document.getElementById('fulfillmentRows').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px;">Loading...</div>';
+  fetch('/api/browse?action=order-fulfillment')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data.error){ alert('Error loading fulfillment data: ' + data.error); return; }
+      fulfillmentOrders = data;
+      renderFulfillment();
+    })
+    .catch(function(err){
+      document.getElementById('fulfillmentRows').innerHTML = '<div style="padding:20px;color:var(--bad);">Error: ' + err.message + '</div>';
+    });
+}
+
+function renderFulfillment(){
+  var pendingOnly = document.getElementById('fulfillmentPendingOnly').checked;
+  var orders = fulfillmentOrders.filter(function(o){
+    if(!pendingOnly) return true;
+    return o.lineItems.some(function(l){ return l.status !== 'received'; });
+  });
+
+  var countEl = document.getElementById('fulfillmentCount');
+  var overdueItems = fulfillmentOrders.reduce(function(n, o){
+    return n + o.lineItems.filter(function(l){ return l.status === 'overdue'; }).length;
+  }, 0);
+  countEl.textContent = orders.length + ' order' + (orders.length === 1 ? '' : 's') +
+    (overdueItems > 0 ? ' \u00b7 ' + overdueItems + ' overdue' : '');
+  countEl.style.color = overdueItems > 0 ? 'var(--bad)' : '';
+
+  var empty = document.getElementById('fulfillmentEmpty');
+  var rows = document.getElementById('fulfillmentRows');
+  if(orders.length === 0){ empty.style.display = 'block'; rows.innerHTML = ''; return; }
+  empty.style.display = 'none';
+
+  rows.innerHTML = orders.map(function(order, oi){
+    var orderId = 'fo_' + order.id;
+    var date = new Date(order.created_at).toLocaleDateString();
+    var exp = new Date(order.expectedBy).toLocaleDateString();
+    var pct = order.totalCount > 0 ? Math.round(order.receivedCount / order.totalCount * 100) : 0;
+    var allReceived = order.receivedCount === order.totalCount;
+    var hasOverdue = order.overdueCount > 0;
+    var progressColor = allReceived ? 'var(--good)' : (hasOverdue ? 'var(--bad)' : '#b8860b');
+    var progressText = order.receivedCount + '/' + order.totalCount + ' received';
+    if(hasOverdue) progressText += ' \u00b7 ' + order.overdueCount + ' overdue';
+
+    var lineItemsHtml = order.lineItems.map(function(li){
+      var pill = li.status === 'received'
+        ? '<span class="pill received">Received</span>'
+        : li.status === 'overdue'
+          ? '<span class="pill overdue">Overdue</span>'
+          : '<span class="pill pending-delivery">Pending</span>';
+
+      var receiptHtml = li.receipts.length > 0
+        ? li.receipts.map(function(r){
+            var rDate = new Date(r.logged_at).toLocaleDateString();
+            return '<div class="fulfillment-receipt">\u2713 Lot ' + escapeHtml(r.lot_number || '--') +
+              (r.quantity != null ? ' \u00b7 Qty ' + r.quantity : '') +
+              ' \u00b7 ' + rDate +
+              (r.received_by ? ' \u00b7 ' + escapeHtml(r.received_by) : '') + '</div>';
+          }).join('')
+        : '<div class="fdetail">Expected by ' + exp + '</div>';
+
+      return '<div class="fulfillment-line">' +
+        '<div><div class="fname">' + escapeHtml(li.item) + '</div>' +
+        '<div class="fdetail">' + escapeHtml(li.analyzer) + ' \u00b7 ' + escapeHtml(li.category) + (li.manufacturer_ref ? ' \u00b7 ' + escapeHtml(li.manufacturer_ref) : '') + '</div>' +
+        receiptHtml + '</div>' +
+        '<div class="fdetail" style="text-align:center;">' + escapeHtml(li.pack_size || '--') + '</div>' +
+        '<div style="text-align:center;font-weight:600;">Qty: ' + li.qty + '</div>' +
+        '<div>' + pill + '</div>' +
+        '</div>';
+    }).join('');
+
+    return '<div class="fulfillment-order">' +
+      '<div class="fulfillment-order-header" onclick="toggleFulfillmentOrder(\'' + orderId + '\')">' +
+      '<h3>' + (order.po_number ? 'PO #' + escapeHtml(order.po_number) : 'Order #' + order.id) +
+      ' \u2014 ' + escapeHtml(order.vendor) + '</h3>' +
+      '<div class="fmeta">' + date + (order.ordered_by ? ' \u00b7 ' + escapeHtml(order.ordered_by) : '') +
+      (order.pdf_url ? ' \u00b7 <a href="' + escapeHtml(order.pdf_url) + '" target="_blank" onclick="event.stopPropagation()">View PDF</a>' : '') +
+      '</div>' +
+      '<div class="fprogress" style="color:' + progressColor + ';">' + progressText + '</div>' +
+      '<span style="color:var(--muted);font-size:12px;">' + (document.getElementById(orderId + '_body') && document.getElementById(orderId + '_body').classList.contains('open') ? '\u25b2' : '\u25bc') + '</span>' +
+      '</div>' +
+      '<div class="fulfillment-order-body" id="' + orderId + '_body">' +
+      '<div style="display:grid;grid-template-columns:1fr 80px 70px auto;gap:8px;padding:8px 16px;background:var(--neutral-bg);border-top:1px solid var(--line);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;">' +
+      '<div>Item</div><div>Pack Size</div><div>Qty</div><div>Status</div></div>' +
+      lineItemsHtml +
+      '</div></div>';
+  }).join('');
+}
+
+function toggleFulfillmentOrder(orderId){
+  var body = document.getElementById(orderId + '_body');
+  if(!body) return;
+  body.classList.toggle('open');
+  // Update chevron
+  var header = body.previousElementSibling;
+  var chevron = header.querySelector('span:last-child');
+  if(chevron) chevron.textContent = body.classList.contains('open') ? '\u25b2' : '\u25bc';
+}
 
 function load(table){
   currentTable = table;
@@ -640,13 +772,24 @@ function load(table){
     document.getElementById('genericToolbar').style.display = 'none';
     document.getElementById('genericTableScroll').style.display = 'none';
     document.getElementById('needsReviewView').style.display = 'block';
+    document.getElementById('fulfillmentView').style.display = 'none';
     document.getElementById('pendingBanner').style.display = 'none';
     loadNeedsReview();
+    return;
+  }
+  if(table === 'order_fulfillment'){
+    document.getElementById('genericToolbar').style.display = 'none';
+    document.getElementById('genericTableScroll').style.display = 'none';
+    document.getElementById('needsReviewView').style.display = 'none';
+    document.getElementById('fulfillmentView').style.display = 'block';
+    document.getElementById('pendingBanner').style.display = 'none';
+    loadFulfillment();
     return;
   }
   document.getElementById('genericToolbar').style.display = 'flex';
   document.getElementById('genericTableScroll').style.display = 'block';
   document.getElementById('needsReviewView').style.display = 'none';
+  document.getElementById('fulfillmentView').style.display = 'none';
   document.getElementById('tableBody').innerHTML = '<tr><td>Loading...</td></tr>';
   fetch('/api/browse?table=' + encodeURIComponent(table))
     .then(function(r){ return r.json(); })
