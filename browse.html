@@ -166,10 +166,10 @@
 
     <div id="fulfillmentView" style="display:none;">
       <div class="toolbar">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-          <input type="checkbox" id="fulfillmentPendingOnly" checked onchange="renderFulfillment()">
-          Pending &amp; overdue only
-        </label>
+      <select id="fulfillmentPendingOnly" onchange="renderFulfillment()">
+          <option value="pending">Pending &amp; overdue only</option>
+          <option value="all">All orders</option>
+        </select>
         <div class="count" id="fulfillmentCount"></div>
       </div>
       <div id="fulfillmentRows"></div>
@@ -680,7 +680,7 @@ function loadFulfillment(){
 }
 
 function renderFulfillment(){
-  var pendingOnly = document.getElementById('fulfillmentPendingOnly').checked;
+  var pendingOnly = document.getElementById('fulfillmentPendingOnly').value === 'pending';
   var orders = fulfillmentOrders.filter(function(o){
     if(!pendingOnly) return true;
     return o.lineItems.some(function(l){ return l.status !== 'received'; });
