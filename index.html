@@ -318,12 +318,13 @@
 
   // Uploads the raw manifest file straight to Storage (same direct-to-storage
   // pattern raw-data.js uses for IFU/SDS attachments -- no Vercel body-size
-  // limit on the file itself) and records its metadata. Failure here is
-  // non-fatal: extraction still proceeds even if the save didn't go
-  // through, it just means this batch won't have a "View original" link.
+  // limit on the file itself) and records its metadata. Returns {id, url}.
+  // For PDFs, the URL is then passed to the extraction endpoint so the server
+  // fetches the file itself, completely bypassing Vercel's 4.5 MB body limit.
   function uploadManifestFile(file){
     var safeName = file.name.replace(/[^a-zA-Z0-9_.\-]+/g, '_');
     var storagePath = 'manifest-uploads/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + safeName;
+    var fileUrl = SUPABASE_URL + '/storage/v1/object/public/raw-data/' + storagePath;
     return fetch(SUPABASE_URL + '/storage/v1/object/raw-data/' + storagePath, {
       method: 'POST',
       headers: {
@@ -334,16 +335,15 @@
       body: file,
     }).then(function(uploadRes){
       if(!uploadRes.ok) throw new Error('Storage upload failed');
-      var fileUrl = SUPABASE_URL + '/storage/v1/object/public/raw-data/' + storagePath;
       return fetch('/api/log-shipment?action=save-manifest-upload', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ fileUrl: fileUrl, filename: file.name, contentType: file.type })
       }).then(function(r){ return r.json(); });
     }).then(function(row){
-      return row && row.id ? row.id : '';
+      return { id: row && row.id ? row.id : '', url: fileUrl };
     }).catch(function(){
-      return ''; // non-fatal -- proceed without a source-document link for this batch
+      return { id: '', url: '' }; // non-fatal for images; handled explicitly for PDFs
     });
   }
 
@@ -460,23 +460,50 @@
     var file = fileInput.files[0];
     if(!file) return;
     var statusEl = document.getElementById('manifestStatus');
-    statusEl.textContent = 'Reading file...';
     document.getElementById('manifestReview').style.display = 'none';
     currentManifestUploadId = '';
-
-    // Save the original document in parallel with extraction -- this is
-    // what lets every row from this batch link back to the literal source
-    // file later, not just the AI's text interpretation of it.
-    uploadManifestFile(file).then(function(id){ currentManifestUploadId = id; });
-
     var isPdf = file.type === 'application/pdf';
+
+    if(isPdf){
+      // PDFs: must upload to Storage first, then pass the URL to the extraction
+      // endpoint. The server fetches the file itself -- this completely sidesteps
+      // Vercel's 4.5 MB request body limit, which a multi-page scanned PDF
+      // (typically 15-20 MB) would always exceed.
+      statusEl.textContent = 'Uploading PDF to storage...';
+      uploadManifestFile(file).then(function(result){
+        currentManifestUploadId = result.id || '';
+        if(!result.url){
+          statusEl.textContent = 'Upload failed -- check your connection and try again.';
+          return;
+        }
+        statusEl.textContent = 'Extracting line items...';
+        return fetch('/api/log-shipment?action=extract-manifest', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ storageUrl: result.url, isPdf: true })
+        }).then(function(r){
+          if(r.status === 413) throw new Error('Request too large. Try splitting the PDF into smaller batches.');
+          if(!r.ok) throw new Error('Server error (' + r.status + '). Try again.');
+          return r.text().then(function(text){
+            try{ return JSON.parse(text); }
+            catch(e){ throw new Error('Unexpected server response. Try again or use Single item entry instead.'); }
+          });
+        }).then(handleExtractionResult).catch(function(err){
+          statusEl.textContent = 'Error: ' + err.message;
+        });
+      });
+      return;
+    }
+
+    // Images: upload in parallel (non-fatal), compress and send base64.
+    uploadManifestFile(file).then(function(result){ currentManifestUploadId = result.id || ''; });
 
     // Images over ~3 MB risk hitting Vercel's 4.5 MB body-size limit once
     // base64-encoded (~33% inflation). Compress large images to a 1600px
     // max dimension at 85% JPEG quality before encoding -- enough for AI
     // text extraction. PDFs pass through unchanged.
     function prepareFile(f){
-      if(isPdf || f.size < 2 * 1024 * 1024) return fileToBase64(f);
+      if(f.size < 2 * 1024 * 1024) return fileToBase64(f);
       return new Promise(function(resolve, reject){
         var img = new Image();
         var url = URL.createObjectURL(f);
@@ -495,13 +522,14 @@
       });
     }
 
+    statusEl.textContent = 'Reading file...';
     prepareFile(file).then(function(base64){
-      var mediaType = isPdf ? 'application/pdf' : 'image/jpeg';
+      var mediaType = 'image/jpeg';
       statusEl.textContent = 'Extracting line items...';
       return fetch('/api/log-shipment?action=extract-manifest', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ base64: base64, mediaType: mediaType, isPdf: isPdf })
+        body: JSON.stringify({ base64: base64, mediaType: mediaType, isPdf: false })
       }).then(function(r){
         if(r.status === 413) throw new Error('File is too large even after compression. Try a lower-resolution photo.');
         if(!r.ok) throw new Error('Server error (' + r.status + '). Try again.');
@@ -509,9 +537,11 @@
           try{ return JSON.parse(text); }
           catch(e){ throw new Error('Unexpected server response. Try again or use Single item entry instead.'); }
         });
+      }).then(handleExtractionResult).catch(function(err){
+        statusEl.textContent = 'Error: ' + err.message;
       });
-    })
-    .then(function(data){
+    });
+    function handleExtractionResult(data){
       if(data.error) throw new Error(data.error);
       var textBlocks = (data.content||[]).filter(function(b){ return b.type==='text'; }).map(function(b){ return b.text; }).join('\n');
       var cleaned = textBlocks.replace(/```json|```/g,'').trim();
@@ -543,10 +573,7 @@
         renderManifestRows();
         document.getElementById('manifestReview').style.display = 'block';
       });
-    })
-    .catch(function(err){
-      statusEl.textContent = 'Extraction failed: ' + err.message;
-    });
+    }
   }
 
   function buildItemOptionsHtml(selectedId){

@@ -159,7 +159,23 @@ async function handleExtractManifest(req, res) {
     });
   }
 
-  const { base64, mediaType, isPdf } = req.body;
+  let { base64, mediaType, isPdf, storageUrl } = req.body;
+
+  // PDFs from the client are uploaded to Supabase Storage first, then the
+  // server fetches them from there. This sidesteps Vercel Hobby's 4.5 MB
+  // request body limit -- a multi-page scanned PDF can easily be 15-20 MB,
+  // which can't be base64-encoded and sent through a serverless function body.
+  if (storageUrl) {
+    const storageRes = await fetch(storageUrl);
+    if (!storageRes.ok) {
+      return res.status(502).json({ error: 'Could not retrieve the uploaded manifest from storage. Try again.' });
+    }
+    const buffer = await storageRes.arrayBuffer();
+    base64 = Buffer.from(buffer).toString('base64');
+    mediaType = 'application/pdf';
+    isPdf = true;
+  }
+
   if (!base64 || !mediaType) {
     return res.status(400).json({ error: 'base64 and mediaType are required' });
   }
