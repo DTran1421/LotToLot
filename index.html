@@ -469,17 +469,48 @@
     // file later, not just the AI's text interpretation of it.
     uploadManifestFile(file).then(function(id){ currentManifestUploadId = id; });
 
-    fileToBase64(file).then(function(base64){
-      var isPdf = file.type === 'application/pdf';
-      var mediaType = isPdf ? 'application/pdf' : (file.type || 'image/png');
+    var isPdf = file.type === 'application/pdf';
+
+    // Images over ~3 MB risk hitting Vercel's 4.5 MB body-size limit once
+    // base64-encoded (~33% inflation). Compress large images to a 1600px
+    // max dimension at 85% JPEG quality before encoding -- enough for AI
+    // text extraction. PDFs pass through unchanged.
+    function prepareFile(f){
+      if(isPdf || f.size < 2 * 1024 * 1024) return fileToBase64(f);
+      return new Promise(function(resolve, reject){
+        var img = new Image();
+        var url = URL.createObjectURL(f);
+        img.onload = function(){
+          URL.revokeObjectURL(url);
+          var MAX = 1600;
+          var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+        };
+        img.onerror = function(){ URL.revokeObjectURL(url); fileToBase64(f).then(resolve).catch(reject); };
+        img.src = url;
+      });
+    }
+
+    prepareFile(file).then(function(base64){
+      var mediaType = isPdf ? 'application/pdf' : 'image/jpeg';
       statusEl.textContent = 'Extracting line items...';
       return fetch('/api/log-shipment?action=extract-manifest', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ base64: base64, mediaType: mediaType, isPdf: isPdf })
+      }).then(function(r){
+        if(r.status === 413) throw new Error('File is too large even after compression. Try a lower-resolution photo.');
+        if(!r.ok) throw new Error('Server error (' + r.status + '). Try again.');
+        return r.text().then(function(text){
+          try{ return JSON.parse(text); }
+          catch(e){ throw new Error('Unexpected server response. Try again or use Single item entry instead.'); }
+        });
       });
     })
-    .then(function(r){ return r.json(); })
     .then(function(data){
       if(data.error) throw new Error(data.error);
       var textBlocks = (data.content||[]).filter(function(b){ return b.type==='text'; }).map(function(b){ return b.text; }).join('\n');
