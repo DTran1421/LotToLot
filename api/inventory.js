@@ -116,7 +116,20 @@ module.exports = async (req, res) => {
         .eq('catalog_id', catalog_id)
         .select();
       if (error) throw error;
-      return res.status(200).json(data[0]);
+
+      // If this update involved marking something reviewed, check whether
+      // all items are now reviewed -- the client uses this to auto-save
+      // the weekly catalog sheet the moment the last item is signed off.
+      let allReviewed = false;
+      if (update.last_reviewed_at) {
+        const { count } = await supabase
+          .from('inventory')
+          .select('*', { count: 'exact', head: true })
+          .is('last_reviewed_at', null);
+        allReviewed = count === 0;
+      }
+
+      return res.status(200).json({ ...data[0], allReviewed });
     }
 
     if (req.method === 'POST' && action === 'reset-review') {

@@ -704,6 +704,7 @@ function saveField(catalogId, field, value, containerEl){
     refreshRowStatus(catalogId);
     refreshReviewedCell(catalogId);
     updateReviewProgress();
+    if(res.allReviewed) autoSaveCatalogSheet();
     document.getElementById('count').textContent =
       document.querySelectorAll('#tableBody tr').length + ' of ' + allRows.length + ' item(s)' +
       (document.getElementById('lowStockOnly').checked ? ' (below par)' : '');
@@ -847,6 +848,7 @@ function markReviewed(catalogId){
     row.reviewed_by = reviewer;
     refreshReviewedCell(catalogId);
     updateReviewProgress();
+    if(res.allReviewed) autoSaveCatalogSheet();
   })
   .catch(function(err){
     console.error('Mark reviewed failed:', err.message);
@@ -858,6 +860,114 @@ function updateReviewProgress(){
   if(!el || allRows.length === 0) return;
   const reviewedCount = allRows.filter(function(r){ return !!r.last_reviewed_at; }).length;
   el.textContent = reviewedCount + ' of ' + allRows.length + ' reviewed';
+}
+
+// Called automatically when the server tells us every item is now reviewed.
+// Generates a full-catalog sheet (no filters) and saves it to the cloud
+// silently -- same code path as the manual Print Catalog Sheet button, but
+// unfiltered and with a brief toast instead of updating the toolbar status.
+function autoSaveCatalogSheet(){
+  var toast = document.getElementById('autoSheetToast');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'autoSheetToast';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = '\u2705 All items reviewed \u2014 saving catalog sheet...';
+  toast.style.display = 'block';
+
+  // Use allRows unfiltered -- this is the weekly snapshot of everything.
+  var groups = {};
+  var groupOrder = [];
+  allRows.forEach(function(r){
+    var k = r.analyzer;
+    if(!groups[k]){ groups[k] = []; groupOrder.push(k); }
+    groups[k].push(r);
+  });
+  groupOrder.sort();
+
+  var { jsPDF } = window.jspdf;
+  var doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  var PAGE_W = 792, MARGIN = 32, HEADER_H = 56;
+  var dateStr = new Date().toLocaleString();
+
+  function reviewedText(r){
+    if(!r.last_reviewed_at) return 'Not yet';
+    var d = fmtDate(r.last_reviewed_at);
+    return r.reviewed_by ? ('Yes - ' + d + ' - ' + r.reviewed_by) : ('Yes - ' + d);
+  }
+
+  var bodyRows = [];
+  groupOrder.forEach(function(name){
+    var rows = sortRows(groups[name]);
+    var rc = rows.filter(function(r){ return !!r.last_reviewed_at; }).length;
+    bodyRows.push([{
+      content: name + '  (' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + ', ' + rc + '/' + rows.length + ' reviewed)',
+      colSpan: 6,
+      styles: { fillColor: [28, 63, 99], textColor: 255, fontStyle: 'bold', fontSize: 9.5, halign: 'left' }
+    }]);
+    rows.forEach(function(r){
+      bodyRows.push([
+        r.item || '', r.category || '', r.manufacturer_ref || '--',
+        r.storage_location || '--', r.storage_temperature || '--', reviewedText(r)
+      ]);
+    });
+  });
+
+  function drawChrome(data){
+    doc.setFillColor(17, 43, 71);
+    doc.rect(0, 0, PAGE_W, HEADER_H, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+    doc.text('ALTRU DIAGNOSTICS \u2014 Catalog Sheet (Auto-saved, all items reviewed)', MARGIN, 24);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    doc.setTextColor(207, 224, 240);
+    doc.text(allRows.length + ' items \u00b7 Auto-generated ' + dateStr, PAGE_W - MARGIN, 24, { align: 'right' });
+    doc.text('Page ' + data.pageNumber, PAGE_W - MARGIN, 40, { align: 'right' });
+  }
+
+  doc.autoTable({
+    startY: HEADER_H + 14,
+    margin: { left: MARGIN, right: MARGIN, top: HEADER_H + 14, bottom: 24 },
+    rowPageBreak: 'avoid',
+    head: [['Item', 'Item Type', 'MFR Ref', 'Location', 'Temperature', 'Reviewed']],
+    body: bodyRows,
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4.5, valign: 'middle', lineColor: [213, 221, 229], lineWidth: 0.5 },
+    headStyles: { fillColor: [17, 43, 71], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    alternateRowStyles: { fillColor: [238, 242, 246] },
+    columnStyles: { 0:{cellWidth:195}, 1:{cellWidth:85}, 2:{cellWidth:100}, 3:{cellWidth:155}, 4:{cellWidth:80}, 5:{cellWidth:'auto'} },
+    didParseCell: function(data){
+      if(data.section === 'body' && data.column.index === 5){
+        var raw = String(data.cell.raw || '');
+        if(raw === 'Not yet'){ data.cell.styles.textColor = [179, 38, 30]; data.cell.styles.fontStyle = 'bold'; }
+        else if(raw.indexOf('Yes') === 0){ data.cell.styles.textColor = [27, 122, 61]; }
+      }
+    },
+    didDrawPage: drawChrome
+  });
+
+  var pdfBase64 = doc.output('datauristring').split(',')[1];
+  var reviewer = countingAsName() || null;
+
+  fetch('/api/inventory?action=save-catalog-sheet', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      pdfBase64: pdfBase64,
+      generatedBy: reviewer,
+      itemCount: allRows.length,
+      filterSummary: 'All items (auto-saved \u2014 all items reviewed)',
+    })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    toast.textContent = d.error
+      ? '\u26a0\ufe0f Auto-sheet failed: ' + d.error
+      : '\u2705 Weekly catalog sheet auto-saved \u2014 all ' + allRows.length + ' items reviewed.';
+    setTimeout(function(){ toast.style.display = 'none'; }, 5000);
+  })
+  .catch(function(){ toast.style.display = 'none'; });
 }
 
 
