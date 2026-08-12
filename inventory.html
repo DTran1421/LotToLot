@@ -263,6 +263,7 @@ var SUPABASE_ANON_KEY = "sb_publishable_uoEd0a25XYnr9rVMrusJjA_eliyxszy";
 var DEFAULT_EMAIL_TO = "kyle.manners@mckesson.com";
 var DEFAULT_EMAIL_CC = "altru-techs@medscanlab.com";
 var vendorsByName = {}; // vendor name -> { order_email, order_cc, ship_to, bill_to, price_required }
+var seqMode = {};       // vKey(vendorName) -> bool; defaults true (sequester on) for McKesson
 
 function loadVendors(){
   return fetch('/api/catalog?action=vendors').then(function(r){ return r.json(); }).then(function(data){
@@ -1167,6 +1168,8 @@ function renderVendorSection(vendorName){
   const ids = groups[vendorName];
   const meta = vendorsByName[vendorName] || {};
   const priceRequired = !!meta.price_required;
+  const isMcKesson = vendorName === 'McKesson';
+  const useSeq = isMcKesson && (seqMode[key] !== false); // default ON for McKesson
 
   const defaultTo = meta.order_email || (vendorName === 'McKesson' ? DEFAULT_EMAIL_TO : '');
   const defaultCc = meta.order_cc || (vendorName === 'McKesson' ? DEFAULT_EMAIL_CC : '');
@@ -1197,17 +1200,33 @@ function renderVendorSection(vendorName){
     rowsHtml = ids.map(function(id){
       const sel = selected[id];
       const r = sel.row;
+      const threshold = r.seq_stock_initial ? r.seq_stock_initial * 0.10 : 0;
+      const seqAvailable = !!(r.mckesson_seq_ref && r.seq_stock !== null && r.seq_stock > threshold);
+      let refCell;
+      if(useSeq && r.mckesson_seq_ref){
+        if(seqAvailable){
+          const pct = r.seq_stock_initial > 0 ? Math.round(r.seq_stock / r.seq_stock_initial * 100) : 0;
+          const badge = '<span style="display:inline-block;margin-left:4px;font-size:10px;background:#d1fae5;color:#065f46;border-radius:3px;padding:1px 5px;font-weight:700;">SEQ · ' + r.seq_stock + ' left (' + pct + '%)</span>';
+          refCell = '<td class="small">' + escapeHtml(r.mckesson_seq_ref) + badge + '</td>';
+        } else {
+          const badge = '<span style="display:inline-block;margin-left:4px;font-size:10px;background:#fde8e8;color:#b3261e;border-radius:3px;padding:1px 5px;font-weight:700;">SEQ DEPLETED</span>';
+          refCell = '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + badge + '</td>';
+        }
+      } else {
+        refCell = '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>';
+      }
       return '<tr data-id="' + id + '">' +
         '<td>' + escapeHtml(r.analyzer) + '</td>' +
         '<td>' + escapeHtml(r.item) + recentlyOrderedWarning(r) + '</td>' +
         '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
-        '<td class="small">' + mckessonLink(r.mckesson_ref, r.mckesson_url) + '</td>' +
+        refCell +
         '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
         '<td class="small">' + r.in_stock + ' / ' + r.par_level + '</td>' +
         '<td><input class="qty-input" type="number" min="0" step="1" value="' + sel.qty + '" onchange="updateQty(\'' + id + '\', this.value)"></td>' +
       '</tr>';
     }).join('');
-    headHtml = '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr ref #</th><th>McKesson ref #</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>';
+    const refColHeader = (useSeq && isMcKesson) ? 'Seq / McK Ref #' : 'McKesson Ref #';
+    headHtml = '<thead><tr><th>Instrument</th><th>Item</th><th>Mfr Ref #</th><th>' + refColHeader + '</th><th>Pack/unit size</th><th>In stock / Par</th><th>Qty to order</th></tr></thead>';
     var tableClass = 'std-table';
   }
 
@@ -1224,11 +1243,37 @@ function renderVendorSection(vendorName){
   const missingWarning = missingPriceCount > 0 ?
     '<p class="small" style="color:var(--bad);font-weight:600;margin-top:6px;">' + missingPriceCount + ' item' + (missingPriceCount === 1 ? '' : 's') + ' missing a price -- add it on the Vendors &gt; Item Pricing page before this PO can be downloaded or sent.</p>' : '';
 
+  const depletedItems = isMcKesson && useSeq ? ids.filter(function(id){
+    const r = selected[id].row;
+    const threshold = r.seq_stock_initial ? r.seq_stock_initial * 0.10 : 0;
+    return r.mckesson_seq_ref && r.seq_stock !== null && r.seq_stock <= threshold;
+  }) : [];
+  const depletedWarning = depletedItems.length > 0
+    ? '<p class="small" style="color:var(--bad);font-weight:600;margin-top:6px;">' +
+        '\u26a0\ufe0f ' + depletedItems.length + ' item' + (depletedItems.length === 1 ? '' : 's') +
+        ' at or below sequester threshold \u2014 falling back to regular McKesson ref: ' +
+        depletedItems.map(function(id){ return escapeHtml(selected[id].row.item); }).join(', ') + '.' +
+      '</p>' : '';
+
+  const seqToggle = isMcKesson
+    ? '<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;">Order source:</span>' +
+        '<button onclick="toggleSeqMode(\'' + escapeHtml(vendorName) + '\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid ' +
+          (useSeq ? 'var(--good)' : 'var(--muted)') + ';background:' + (useSeq ? 'var(--good-bg)' : '#f3f4f6') + ';color:' + (useSeq ? 'var(--good)' : 'var(--muted)') + ';">' +
+          (useSeq ? '\u2705 Sequester inventory' : '\u25a1 Regular McKesson') +
+        '</button>' +
+        (useSeq ? '<span class="small" style="color:var(--muted);">Using sequester item numbers. Switch to Regular if sequester is depleted.</span>'
+                : '<span class="small" style="color:var(--muted);">Using standard McKesson refs.</span>') +
+      '</div>'
+    : '';
+
   return '<div class="card" id="vendorSection__' + key + '" style="margin-top:14px;">' +
-    '<h2>' + escapeHtml(vendorName) + (priceRequired ? ' &mdash; Purchase Order' : '') + '</h2>' +
+    '<h2>' + escapeHtml(vendorName) + (priceRequired ? ' &mdash; Purchase Order' : '') + (useSeq && isMcKesson ? ' <span style="font-size:12px;font-weight:600;color:var(--good);background:var(--good-bg);padding:2px 8px;border-radius:12px;vertical-align:middle;">SEQUESTER</span>' : '') + '</h2>' +
+    seqToggle +
     addressBlock +
     '<div class="table-scroll" style="margin-top:10px;"><table class="' + tableClass + '">' + headHtml + '<tbody>' + rowsHtml + '</tbody></table></div>' +
     totalLine +
+    depletedWarning +
     missingWarning +
     '<label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;margin-bottom:4px;">Ordered by</label>' +
     '<input type="text" id="orderedBy__' + key + '" class="lt-order-input" value="' + escapeHtml(countingAsName()) + '" placeholder="Your name" style="margin-bottom:8px;">' +
@@ -1450,6 +1495,8 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
   const meta = vendorsByName[vendorName] || {};
   const priceRequired = !!meta.price_required;
   const hasAddresses = !!(meta.ship_to && meta.bill_to);
+  const isSeq = items.some(function(it){ return it.is_seq; });
+  const fallbackItems = items.filter(function(it){ return it.seq_fallback; });
 
   let startY = 76;
 
@@ -1458,6 +1505,16 @@ function renderPdfBlob(vendorName, items, notes, poNumber, testMode){
     doc.setFontSize(16);
     doc.setTextColor(17, 43, 71);
     doc.text((priceRequired ? 'PURCHASE ORDER - #' + poNumber : 'ORDER #' + poNumber + (poNumber ? '' : ' - ' + vendorName)), margin, 42);
+
+    if(isSeq){
+      doc.setFillColor(5, 150, 105);
+      doc.rect(margin, 48, pageWidth - margin * 2, 14, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text('SEQUESTER INVENTORY ORDER \u2014 Use sequester item numbers below when submitting', margin + 4, 57.5);
+      doc.setTextColor(0, 0, 0);
+    }
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -1626,23 +1683,55 @@ function copyTableForSpreadsheet(vendorName){
   });
 }
 
-function buildItemsPayload(vendorName){
+function buildItemsPayload(vendorName, useSeq){
   const groups = selectedByVendor();
   const ids = groups[vendorName] || [];
   return ids.map(function(id){
     const sel = selected[id];
     const r = sel.row;
+    const threshold = r.seq_stock_initial ? r.seq_stock_initial * 0.10 : 0;
+    const seqAvailable = !!(r.mckesson_seq_ref && r.seq_stock !== null && r.seq_stock > threshold);
+    const effectiveRef = (useSeq && seqAvailable) ? r.mckesson_seq_ref : r.mckesson_ref;
     return {
       catalog_id: r.catalog_id,
       analyzer: r.analyzer,
       category: r.category,
       item: r.item,
       manufacturer_ref: r.manufacturer_ref,
-      mckesson_ref: r.mckesson_ref,
+      mckesson_ref: effectiveRef,
+      mckesson_ref_original: r.mckesson_ref,
+      mckesson_seq_ref: r.mckesson_seq_ref,
+      seq_stock: r.seq_stock,
+      seq_stock_initial: r.seq_stock_initial,
+      is_seq: !!(useSeq && seqAvailable),
+      seq_fallback: !!(useSeq && r.mckesson_seq_ref && !seqAvailable),
       pack_size: r.pack_size,
       unit_price: r.unit_price,
       qty: sel.qty
     };
+  });
+}
+
+function toggleSeqMode(vendorName){
+  const key = vKey(vendorName);
+  seqMode[key] = !(seqMode[key] !== false); // flip; default was true
+  refreshVendorSection(vendorName);
+}
+
+function isSeqMode(vendorName){
+  const key = vKey(vendorName);
+  return vendorName === 'McKesson' && (seqMode[key] !== false);
+}
+
+function decrementSeqStock(items){
+  const seqItems = items.filter(function(it){ return it.is_seq; }).map(function(it){
+    return { catalog_id: it.catalog_id, qty: it.qty };
+  });
+  if(seqItems.length === 0) return Promise.resolve();
+  return fetch('/api/inventory?action=decrement-seq-stock', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ items: seqItems })
   });
 }
 
@@ -1700,7 +1789,8 @@ function clearVendorSelection(vendorName){
 
 function generateAndDownload(vendorName){
   const key = vKey(vendorName);
-  const items = buildItemsPayload(vendorName);
+  const useSeq = isSeqMode(vendorName);
+  const items = buildItemsPayload(vendorName, useSeq);
   const notesEl = document.getElementById('orderNotes__' + key);
   const notes = notesEl ? notesEl.value : '';
   const orderedByEl = document.getElementById('orderedBy__' + key);
@@ -1729,6 +1819,7 @@ function generateAndDownload(vendorName){
       return attachPdf(orderId, base64, pdfResult.filename).then(function(){ return base64; });
     })
     .then(function(){
+      if(!testMode && useSeq) decrementSeqStock(items);
       const url = URL.createObjectURL(pdfResult.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1758,7 +1849,8 @@ function generateAndDownload(vendorName){
 
 function generateAndSend(vendorName){
   const key = vKey(vendorName);
-  const items = buildItemsPayload(vendorName);
+  const useSeq = isSeqMode(vendorName);
+  const items = buildItemsPayload(vendorName, useSeq);
   const notesEl = document.getElementById('orderNotes__' + key);
   const notes = notesEl ? notesEl.value : '';
   const orderedByEl = document.getElementById('orderedBy__' + key);
@@ -1821,6 +1913,7 @@ function generateAndSend(vendorName){
         if(dl) dl.disabled = false;
         if(sb) sb.disabled = false;
       } else {
+        if(useSeq) decrementSeqStock(items);
         setStatus(vendorName, 'Order saved and email sent to ' + to + '.', 'ok');
         clearVendorSelection(vendorName);
       }

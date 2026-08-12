@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
     if (req.method === 'GET') {
       const { data: rows, error } = await supabase
         .from('inventory')
-        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size, storage_location, storage_temperature, vendor, vendor_pricing(unit_price))')
+        .select('*, catalog(id, analyzer, category, item, manufacturer_name, manufacturer_ref, mckesson_ref, mckesson_url, pack_size, storage_location, storage_temperature, vendor, mckesson_seq_ref, seq_stock, seq_stock_initial, vendor_pricing(unit_price))')
         .order('catalog_id');
       if (error) throw error;
 
@@ -66,6 +66,9 @@ module.exports = async (req, res) => {
           pack_size: r.catalog ? r.catalog.pack_size : null,
           storage_location: r.catalog ? r.catalog.storage_location : null,
           storage_temperature: r.catalog ? r.catalog.storage_temperature : null,
+          mckesson_seq_ref: r.catalog ? r.catalog.mckesson_seq_ref : null,
+          seq_stock: r.catalog ? r.catalog.seq_stock : null,
+          seq_stock_initial: r.catalog ? r.catalog.seq_stock_initial : null,
           vendor: r.catalog ? r.catalog.vendor : null,
           unit_price: unitPrice,
           in_stock: r.in_stock,
@@ -233,7 +236,22 @@ module.exports = async (req, res) => {
       return res.status(200).json({ pdf_url: urlData.publicUrl });
     }
 
-    // "Print Catalog Sheet" on the Inventory page is cloud-only by design
+    // Sequester inventory: decrement seq_stock for each item ordered.
+    // Called right after a sequester order is saved (not in test mode).
+    if (req.method === 'POST' && action === 'decrement-seq-stock') {
+      const { items } = req.body; // [{catalog_id, qty}]
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items array is required' });
+      }
+      for (const it of items) {
+        const { error } = await supabase.rpc('decrement_seq_stock', {
+          p_catalog_id: it.catalog_id,
+          p_qty: it.qty,
+        });
+        if (error) throw error;
+      }
+      return res.status(200).json({ success: true });
+    }
     // (no local download) -- the generated PDF is saved straight to the
     // same public "reports" Storage bucket used for order PDFs, with a
     // history row so it's browsable from the Catalog Sheets tab.
