@@ -207,7 +207,7 @@ Use null for any field that isn't present or legible for a given line. If you fi
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 8000,
       messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: instructions }] }],
     }),
   });
@@ -215,6 +215,9 @@ Use null for any field that isn't present or legible for a given line. If you fi
   const data = await response.json();
   if (!response.ok) {
     throw new Error((data.error && data.error.message) || ('Anthropic API error (status ' + response.status + ')'));
+  }
+  if (data.stop_reason === 'max_tokens') {
+    return res.status(200).json({ error: 'Manifest has too many line items to extract in one pass -- try splitting it into smaller batches.' });
   }
   res.status(200).json(data);
 }
