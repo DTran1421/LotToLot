@@ -99,6 +99,7 @@
       <div><label>Manufacturer ref #</label><input id="f_manufacturer_ref" placeholder="e.g. OSR6102"></div>
       <div><label>McKesson ref #</label><input id="f_mckesson_ref" placeholder="optional"></div>
       <div><label>McKesson product link</label><input id="f_mckesson_url" placeholder="optional -- auto-generated from ref # if left blank"></div>
+      <div><label>SDS link</label><input id="f_sds_url" placeholder="optional -- direct link to Safety Data Sheet PDF"></div>
       <div><label>Pack/unit size</label><input id="f_pack_size" placeholder="e.g. 1000/BG, 6BG/BX"></div>
       <div><label>Storage temp</label><input id="f_storage_temperature" placeholder="e.g. 2-8&deg;C (Refrigerated)"></div>
       <div><label>Storage location</label><input id="f_storage_location" placeholder="e.g. Clinical Fridge 3, or 'A (note); B (note)' for dual-location" title="Plain single location: e.g. &quot;Clinical Fridge 3&quot;.&#10;&#10;For an item that moves between two locations (e.g. frozen until opened, then refrigerated), use the format &quot;Location A (note); Location B (note)&quot; -- e.g. &quot;Clinical Freezer 1 (frozen, upon receipt); Clinical Fridge 2 (once opened)&quot;.&#10;&#10;The Reference Sheets page parses exactly this format (semicolon-separated, each location followed by a parenthetical note) to list the item under both locations, in its own section, with the correct note shown for whichever location's sheet you're viewing. A typo in the punctuation will make it silently fall back to a single combined location instead."></div>
@@ -150,6 +151,7 @@ var SORT_COLUMNS = [
   { key: 'manufacturer_name', label: 'Mfr name' },
   { key: 'manufacturer_ref', label: 'Mfr ref #' },
   { key: 'mckesson_ref', label: 'McKesson ref #' },
+  { key: 'sds_url', label: 'SDS' },
   { key: 'pack_size', label: 'Pack/unit size' },
   { key: 'storage_temperature', label: 'Storage Temp' },
   { key: 'storage_location', label: 'Storage Location' },
@@ -236,6 +238,7 @@ function render(){
       '<td class="small">' + escapeHtml(r.manufacturer_name||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
+      '<td class="small">' + (r.sds_url ? ('<a href="' + escapeHtml(r.sds_url) + '" target="_blank" rel="noopener">SDS \u2197</a>') : '--') + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.storage_temperature||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.storage_location||'--') + '</td>' +
@@ -316,7 +319,7 @@ function printSelectedColumns(){
 function resetForm(){
   document.getElementById('editId').value = '';
   document.getElementById('formTitle').textContent = 'Add new item';
-  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_mckesson_url','f_pack_size','f_storage_temperature','f_storage_location','f_vendor','f_notes'].forEach(function(id){
+  ['f_analyzer','f_category','f_item','f_manufacturer_name','f_manufacturer_ref','f_mckesson_ref','f_mckesson_url','f_sds_url','f_pack_size','f_storage_temperature','f_storage_location','f_vendor','f_notes'].forEach(function(id){
     document.getElementById(id).value = '';
   });
   document.getElementById('formStatus').textContent = '';
@@ -334,6 +337,7 @@ function editRow(id){
   document.getElementById('f_manufacturer_ref').value = r.manufacturer_ref || '';
   document.getElementById('f_mckesson_ref').value = r.mckesson_ref || '';
   document.getElementById('f_mckesson_url').value = r.mckesson_url || '';
+  document.getElementById('f_sds_url').value = r.sds_url || '';
   document.getElementById('f_pack_size').value = r.pack_size || '';
   document.getElementById('f_storage_temperature').value = r.storage_temperature || '';
   document.getElementById('f_storage_location').value = r.storage_location || '';
@@ -354,6 +358,7 @@ function save(){
     manufacturer_ref: document.getElementById('f_manufacturer_ref').value,
     mckesson_ref: document.getElementById('f_mckesson_ref').value,
     mckesson_url: document.getElementById('f_mckesson_url').value,
+    sds_url: document.getElementById('f_sds_url').value,
     pack_size: document.getElementById('f_pack_size').value,
     storage_temperature: document.getElementById('f_storage_temperature').value,
     storage_location: document.getElementById('f_storage_location').value,

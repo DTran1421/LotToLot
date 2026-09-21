@@ -133,6 +133,7 @@ module.exports = async (req, res) => {
         manufacturer_ref: body.manufacturer_ref || null,
         mckesson_ref: body.mckesson_ref || null,
         mckesson_url: body.mckesson_url || null,
+        sds_url: body.sds_url || null,
         pack_size: body.pack_size || null,
         storage_temperature: body.storage_temperature || null,
         storage_location: body.storage_location || null,
