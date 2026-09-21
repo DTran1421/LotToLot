@@ -238,7 +238,7 @@ function render(){
       '<td class="small">' + escapeHtml(r.manufacturer_name||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.manufacturer_ref||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.mckesson_ref||'--') + '</td>' +
-      '<td class="small">' + (r.sds_url ? ('<a href="' + escapeHtml(r.sds_url) + '" target="_blank" rel="noopener">SDS \u2197</a>') : '--') + '</td>' +
+      '<td class="small">' + (r.sds_url && r.sds_url !== 'N/A' ? ('<a href="' + escapeHtml(r.sds_url) + '" target="_blank" rel="noopener">SDS \u2197</a>') : (r.sds_url === 'N/A' ? 'N/A' : '--')) + '</td>' +
       '<td class="small">' + escapeHtml(r.pack_size||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.storage_temperature||'--') + '</td>' +
       '<td class="small">' + escapeHtml(r.storage_location||'--') + '</td>' +
