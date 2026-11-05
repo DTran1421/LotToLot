@@ -1,13 +1,17 @@
 name: Weekly Reviewed-Column Reset
 
-# Clears last_reviewed_at on every inventory row every Sunday at 2 AM
-# Central, starting a fresh count cycle automatically -- same effect as
-# manually clicking "Start New Count" on the Inventory page.
+# Every Sunday at 2 AM Central:
+#   1. Save a weekly catalog sheet snapshot of the count as it stands,
+#      listing any items left unreviewed at the top. (Skipped automatically
+#      if the count was finished and its "all reviewed" sheet already saved.)
+#   2. Clear last_reviewed_at on every inventory row, starting a fresh count
+#      cycle -- same effect as clicking "Start New Count" on the Inventory page.
+#
+# The reset still runs if the snapshot fails (so Monday's count starts
+# clean), but the job is then marked failed so the miss is visible.
 #
 # Cron is always UTC and GitHub Actions doesn't auto-adjust for daylight
-# saving, so this fires at 2 AM CDT (summer) / 1 AM CST (winter) -- a
-# 1-hour drift twice a year, harmless for a task meant to run in the
-# middle of the night either way.
+# saving, so this fires at 2 AM CDT (summer) / 1 AM CST (winter).
 
 on:
   schedule:
@@ -18,8 +22,30 @@ jobs:
   reset-review:
     runs-on: ubuntu-latest
     steps:
+      - name: Save weekly catalog sheet snapshot
+        id: snapshot
+        continue-on-error: true
+        run: |
+          for attempt in 1 2; do
+            if out=$(curl -sf -X POST -H "Content-Type: application/json" \
+                 -d '{"kind":"weekly"}' \
+                 "https://lot-to-lot.vercel.app/api/inventory?action=auto-catalog-sheet"); then
+              echo "Snapshot result: $out"
+              exit 0
+            fi
+            echo "Snapshot attempt $attempt failed"
+            sleep 60
+          done
+          exit 1
+
       - name: Reset Reviewed column via existing reset-review API action
         run: |
           curl -sf -X POST "https://lot-to-lot.vercel.app/api/inventory?action=reset-review" > /dev/null \
             && echo "Weekly review reset succeeded" \
             || (echo "Weekly review reset FAILED" && exit 1)
+
+      - name: Flag a failed snapshot
+        if: steps.snapshot.outcome == 'failure'
+        run: |
+          echo "Weekly catalog sheet snapshot FAILED -- no sheet was saved for this week."
+          exit 1

@@ -1,5 +1,6 @@
 const supabase = require('./_supabase');
 const nodemailer = require('nodemailer');
+const { autoCatalogSheet } = require('./_catalogSheet');
 
 /**
  * Single consolidated endpoint for everything on the Inventory page.
@@ -16,6 +17,7 @@ const nodemailer = require('nodemailer');
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
  * POST /api/inventory?action=save-catalog-sheet     -> save a client-generated "Print Catalog Sheet" PDF to Storage + catalog_sheet_history (cloud-only, no local download)
  * GET  /api/inventory?action=catalog-sheet-history  -> list past catalog sheet generations, most recent first
+ * POST /api/inventory?action=auto-catalog-sheet     -> build + save an automatic catalog sheet server-side from fresh data. Body {kind:'complete'|'weekly', generatedBy}. 'complete' saves once per count cycle; 'weekly' (run by the Sunday GitHub Action before the reset) lists anything left unreviewed. See api/_catalogSheet.js.
  */
 module.exports = async (req, res) => {
   try {
@@ -268,6 +270,15 @@ module.exports = async (req, res) => {
     // (no local download) -- the generated PDF is saved straight to the
     // same public "reports" Storage bucket used for order PDFs, with a
     // history row so it's browsable from the Catalog Sheets tab.
+    if (req.method === 'POST' && action === 'auto-catalog-sheet') {
+      const { kind, generatedBy } = req.body || {};
+      if (kind !== 'complete' && kind !== 'weekly') {
+        return res.status(400).json({ error: "kind must be 'complete' or 'weekly'" });
+      }
+      const result = await autoCatalogSheet(kind, generatedBy);
+      return res.status(200).json(result);
+    }
+
     if (req.method === 'POST' && action === 'save-catalog-sheet') {
       const { pdfBase64, generatedBy, itemCount, filterSummary } = req.body;
       if (!pdfBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
