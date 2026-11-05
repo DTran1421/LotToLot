@@ -1,4 +1,5 @@
 const supabase = require('./_supabase');
+const { labDate, addDays } = require('./_time');
 
 // Allowlist only -- never pass the query param straight into a query builder
 // or raw SQL. This is the one thing standing between a client-controlled
@@ -133,21 +134,28 @@ module.exports = async (req, res) => {
         .order('created_at', { ascending: false });
       if (ordErr) throw ordErr;
 
-      const { data: receipts, error: recErr } = await supabase
-        .from('receiving_log')
-        .select('id, logged_at, item, manufacturer_ref, lot_number, quantity, received_by, instrument, category')
-        .gte('logged_at', cutoff.toISOString())
-        .order('logged_at', { ascending: false });
-      if (recErr) throw recErr;
+      // Paged: a busy 90 days can exceed Supabase's 1,000-row response cap.
+      const receipts = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error: recErr } = await supabase
+          .from('receiving_log')
+          .select('id, logged_at, item, manufacturer_ref, lot_number, quantity, received_by, instrument, category')
+          .gte('logged_at', cutoff.toISOString())
+          .order('logged_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + 999);
+        if (recErr) throw recErr;
+        receipts.push(...page);
+        if (page.length < 1000) break;
+      }
 
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
+      // Weekdays and "today" are worked out in Houston time, not UTC, so
+      // an evening order counts for the day it was actually placed.
+      const today = labDate().ymd;
 
       const result = orders.map(order => {
-        const orderDate = new Date(order.created_at);
-        orderDate.setHours(0, 0, 0, 0);
-        const expectedBy = new Date(orderDate);
-        expectedBy.setDate(orderDate.getDate() + DAYS_TO_ADD[orderDate.getDay()]);
+        const placed = labDate(order.created_at);
+        const expectedBy = addDays(placed.ymd, DAYS_TO_ADD[placed.weekday]); // 'YYYY-MM-DD'
 
         const lineItems = (order.items || []).map(lineItem => {
           // Match receipts by manufacturer_ref, received after order placed
@@ -160,7 +168,7 @@ module.exports = async (req, res) => {
 
           let status;
           if (matched.length > 0)        status = 'received';
-          else if (now <= expectedBy)     status = 'pending';
+          else if (today <= expectedBy)   status = 'pending';
           else                            status = 'overdue';
 
           return {
@@ -193,7 +201,7 @@ module.exports = async (req, res) => {
           ordered_by:   order.ordered_by,
           sent_at:      order.sent_at,
           pdf_url:      order.pdf_url,
-          expectedBy:   expectedBy.toISOString(),
+          expectedBy,
           lineItems,
           receivedCount,
           overdueCount,
@@ -209,10 +217,16 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'table must be one of: ' + Object.keys(TABLES).join(', ') });
     }
     const cfg = TABLES[table];
-    let query = supabase.from(table).select(cfg.select || '*').limit(cfg.limit);
+    // Paged: ?offset=N returns the next cfg.limit rows (the page shows a
+    // "Load more" button whenever a full page comes back).
+    const offsetNum = Number(req.query.offset);
+    const offset = Number.isInteger(offsetNum) && offsetNum > 0 ? offsetNum : 0;
+    let query = supabase.from(table).select(cfg.select || '*').range(offset, offset + cfg.limit - 1);
     cfg.order.forEach(([col, desc]) => {
       query = query.order(col, { ascending: !desc });
     });
+    query = query.order('id', { ascending: false }); // tiebreaker so pages never overlap or skip
+    res.setHeader('X-Page-Size', String(cfg.limit));
     const { data, error } = await query;
     if (error) throw error;
     res.status(200).json(data);

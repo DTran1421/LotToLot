@@ -1,6 +1,13 @@
 const supabase = require('./_supabase');
 const nodemailer = require('nodemailer');
 const { autoCatalogSheet } = require('./_catalogSheet');
+const { labDate } = require('./_time');
+
+const PAGE_SIZE = 100;
+function pageOffset(req) {
+  const n = Number(req.query.offset);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
 
 /**
  * Single consolidated endpoint for everything on the Inventory page.
@@ -12,11 +19,11 @@ const { autoCatalogSheet } = require('./_catalogSheet');
  * PATCH /api/inventory                      -> update in_stock / par_level / last_reviewed_at (+ optional reviewed_by) for one catalog_id
  * POST /api/inventory?action=create-order   -> create an order (+ order_log rows, + inventory bump); assigns a PO number for non-McKesson vendors. No PDF yet -- see attach-pdf. Pass test:true to preview (no writes at all, PO number prefixed TEST- and never reserved).
  * POST /api/inventory?action=attach-pdf     -> save the client-generated PDF (which needed the PO number from create-order) to Storage and set orders.pdf_url. Skip entirely in test mode -- there's no real order row to attach to.
- * GET  /api/inventory?action=list-orders    -> list past orders, most recent first
+ * GET  /api/inventory?action=list-orders    -> list past orders, most recent first, 100 per page (&offset=N for more)
  * POST /api/inventory?action=send-email     -> email a generated order PDF via Gmail SMTP
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
  * POST /api/inventory?action=save-catalog-sheet     -> save a client-generated "Print Catalog Sheet" PDF to Storage + catalog_sheet_history (cloud-only, no local download)
- * GET  /api/inventory?action=catalog-sheet-history  -> list past catalog sheet generations, most recent first
+ * GET  /api/inventory?action=catalog-sheet-history  -> list past catalog sheet generations, most recent first, 100 per page (&offset=N for more)
  * DELETE /api/inventory?action=delete-catalog-sheet&id=N (or &ids=1,2,3) -> remove catalog sheets from the history list (the PDF files stay in Storage)
  * POST /api/inventory?action=auto-catalog-sheet     -> build + save an automatic catalog sheet server-side from fresh data. Body {kind:'complete'|'weekly', generatedBy}. 'complete' saves once per count cycle; 'weekly' (run by the Sunday GitHub Action before the reset) lists anything left unreviewed. See api/_catalogSheet.js.
  */
@@ -25,13 +32,15 @@ module.exports = async (req, res) => {
     const action = req.query.action;
 
     if (req.method === 'GET' && action === 'list-orders') {
-      const { data, error } = await supabase.from('orders').select('*').neq('hidden', true).order('created_at', { ascending: false }).limit(100);
+      const offset = pageOffset(req);
+      const { data, error } = await supabase.from('orders').select('*').neq('hidden', true).order('created_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
       return res.status(200).json(data);
     }
 
     if (req.method === 'GET' && action === 'catalog-sheet-history') {
-      const { data, error } = await supabase.from('catalog_sheet_history').select('*').order('generated_at', { ascending: false }).limit(100);
+      const offset = pageOffset(req);
+      const { data, error } = await supabase.from('catalog_sheet_history').select('*').order('generated_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
       return res.status(200).json(data);
     }
@@ -43,12 +52,22 @@ module.exports = async (req, res) => {
         .order('catalog_id');
       if (error) throw error;
 
-      const { data: logRows, error: logErr } = await supabase.from('order_log').select('catalog_id');
-      if (logErr) throw logErr;
-
+      // Supabase caps a single response at 1,000 rows, so read order_log
+      // in pages -- otherwise Order Freq silently stops counting once the
+      // log passes 1,000 line items.
       const freqMap = {};
-      for (const r of logRows) {
-        freqMap[r.catalog_id] = (freqMap[r.catalog_id] || 0) + 1;
+      const LOG_PAGE = 1000;
+      for (let from = 0; ; from += LOG_PAGE) {
+        const { data: logRows, error: logErr } = await supabase
+          .from('order_log')
+          .select('catalog_id')
+          .order('id')
+          .range(from, from + LOG_PAGE - 1);
+        if (logErr) throw logErr;
+        for (const r of logRows) {
+          freqMap[r.catalog_id] = (freqMap[r.catalog_id] || 0) + 1;
+        }
+        if (logRows.length < LOG_PAGE) break;
       }
 
       const result = rows.map((r) => {
@@ -159,8 +178,10 @@ module.exports = async (req, res) => {
       // -- guarantees uniqueness without relying on client-side timing.
       let poNumber = null;
       if (vendorName !== 'McKesson') {
-        const now = new Date();
-        const base = String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + now.getFullYear();
+        // Today's date in Houston, not UTC -- otherwise evening orders get
+        // tomorrow's date as their PO number.
+        const today = labDate();
+        const base = String(today.m).padStart(2, '0') + String(today.d).padStart(2, '0') + today.y;
         const { data: existing, error: poErr } = await supabase
           .from('orders')
           .select('po_number')
@@ -204,24 +225,30 @@ module.exports = async (req, res) => {
       const { error: logErr } = await supabase.from('order_log').insert(logRows);
       if (logErr) throw logErr;
 
-      for (const it of items) {
-        const { data: currentRows, error: fetchErr } = await supabase
-          .from('inventory')
-          .select('order_count')
-          .eq('catalog_id', it.catalog_id)
-          .single();
-        if (fetchErr) throw fetchErr;
+      // One read for every item's current count, then all updates in
+      // parallel (was two sequential round-trips per item). Repeated
+      // catalog_ids in one order are bumped once per occurrence, as before.
+      const bumps = {};
+      items.forEach((it) => { bumps[it.catalog_id] = (bumps[it.catalog_id] || 0) + 1; });
+      const ids = Object.keys(bumps).map(Number);
+      const { data: currentRows, error: fetchErr } = await supabase
+        .from('inventory')
+        .select('catalog_id, order_count')
+        .in('catalog_id', ids);
+      if (fetchErr) throw fetchErr;
+      const currentCount = {};
+      currentRows.forEach((r) => { currentCount[r.catalog_id] = r.order_count || 0; });
 
-        const { error: updateErr } = await supabase
-          .from('inventory')
-          .update({
-            last_ordered_at: now,
-            last_ordered_by: orderedBy || null,
-            order_count: (currentRows.order_count || 0) + 1,
-          })
-          .eq('catalog_id', it.catalog_id);
-        if (updateErr) throw updateErr;
-      }
+      const results = await Promise.all(ids.map((id) => supabase
+        .from('inventory')
+        .update({
+          last_ordered_at: now,
+          last_ordered_by: orderedBy || null,
+          order_count: (currentCount[id] || 0) + bumps[id],
+        })
+        .eq('catalog_id', id)));
+      const failed = results.find((r) => r.error);
+      if (failed) throw failed.error;
 
       return res.status(200).json(order);
     }
@@ -259,13 +286,12 @@ module.exports = async (req, res) => {
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items array is required' });
       }
-      for (const it of items) {
-        const { error } = await supabase.rpc('decrement_seq_stock', {
-          p_catalog_id: it.catalog_id,
-          p_qty: it.qty,
-        });
-        if (error) throw error;
-      }
+      const results = await Promise.all(items.map((it) => supabase.rpc('decrement_seq_stock', {
+        p_catalog_id: it.catalog_id,
+        p_qty: it.qty,
+      })));
+      const failed = results.find((r) => r.error);
+      if (failed) throw failed.error;
       return res.status(200).json({ success: true });
     }
     // (no local download) -- the generated PDF is saved straight to the

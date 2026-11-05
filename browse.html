@@ -143,6 +143,7 @@
         <tbody id="tableBody"></tbody>
       </table>
       <div class="empty" id="empty" style="display:none;">No rows.</div>
+      <div style="text-align:center;padding:12px 0;"><button class="secondary" id="loadMoreBtn" style="display:none;" onclick="loadMoreRows()">Load more</button></div>
     </div>
 
     <div id="needsReviewView" style="display:none;">
@@ -702,7 +703,10 @@ function renderFulfillment(){
   rows.innerHTML = orders.map(function(order, oi){
     var orderId = 'fo_' + order.id;
     var date = new Date(order.created_at).toLocaleDateString();
-    var exp = new Date(order.expectedBy).toLocaleDateString();
+    // expectedBy is a plain 'YYYY-MM-DD' calendar date -- build it as a
+    // local date so it never shifts a day in the browser.
+    var ep = String(order.expectedBy || '').split('-').map(Number);
+    var exp = ep.length === 3 ? new Date(ep[0], ep[1] - 1, ep[2]).toLocaleDateString() : '--';
     var pct = order.totalCount > 0 ? Math.round(order.receivedCount / order.totalCount * 100) : 0;
     var allReceived = order.receivedCount === order.totalCount;
     var hasOverdue = order.overdueCount > 0;
@@ -791,22 +795,49 @@ function load(table){
   document.getElementById('needsReviewView').style.display = 'none';
   document.getElementById('fulfillmentView').style.display = 'none';
   document.getElementById('tableBody').innerHTML = '<tr><td>Loading...</td></tr>';
-  fetch('/api/browse?table=' + encodeURIComponent(table))
-    .then(function(r){ return r.json(); })
+  document.getElementById('loadMoreBtn').style.display = 'none';
+  fetchTablePage(table, 0)
     .then(function(rows){
-      if(rows.error){ throw new Error(rows.error); }
-      currentRows = rows.map(function(r){
-        if(r.manifest_uploads){
-          r.source_manifest_url = r.manifest_uploads.file_url;
-        }
-        return r;
-      });
+      if(table !== currentTable) return; // user switched tabs mid-load
+      currentRows = rows;
       populateFilterDropdowns();
       render();
     })
     .catch(function(err){
       document.getElementById('tableBody').innerHTML = '<tr><td>Error: ' + escapeHtml(err.message) + '</td></tr>';
     });
+}
+
+// Fetches one page of a table; shows "Load more" when a full page came back.
+function fetchTablePage(table, offset){
+  var pageSize = 0;
+  return fetch('/api/browse?table=' + encodeURIComponent(table) + '&offset=' + offset)
+    .then(function(r){ pageSize = Number(r.headers.get('X-Page-Size')) || 0; return r.json(); })
+    .then(function(rows){
+      if(rows.error){ throw new Error(rows.error); }
+      document.getElementById('loadMoreBtn').style.display = (pageSize && rows.length >= pageSize) ? 'inline-block' : 'none';
+      return rows.map(function(r){
+        if(r.manifest_uploads){
+          r.source_manifest_url = r.manifest_uploads.file_url;
+        }
+        return r;
+      });
+    });
+}
+
+function loadMoreRows(){
+  var table = currentTable;
+  var btn = document.getElementById('loadMoreBtn');
+  btn.disabled = true; btn.textContent = 'Loading...';
+  fetchTablePage(table, currentRows.length)
+    .then(function(rows){
+      if(table !== currentTable) return;
+      currentRows = currentRows.concat(rows);
+      populateFilterDropdowns();
+      render();
+    })
+    .catch(function(err){ alert('Could not load more rows: ' + err.message); })
+    .then(function(){ btn.disabled = false; btn.textContent = 'Load more'; });
 }
 
 /* ---------- Needs Review ---------- */
