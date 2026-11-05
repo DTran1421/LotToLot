@@ -17,6 +17,7 @@ const { autoCatalogSheet } = require('./_catalogSheet');
  * POST /api/inventory?action=reset-review   -> clear last_reviewed_at on every row (start a new count cycle)
  * POST /api/inventory?action=save-catalog-sheet     -> save a client-generated "Print Catalog Sheet" PDF to Storage + catalog_sheet_history (cloud-only, no local download)
  * GET  /api/inventory?action=catalog-sheet-history  -> list past catalog sheet generations, most recent first
+ * DELETE /api/inventory?action=delete-catalog-sheet&id=N -> remove one catalog sheet from the history list (the PDF file stays in Storage)
  * POST /api/inventory?action=auto-catalog-sheet     -> build + save an automatic catalog sheet server-side from fresh data. Body {kind:'complete'|'weekly', generatedBy}. 'complete' saves once per count cycle; 'weekly' (run by the Sunday GitHub Action before the reset) lists anything left unreviewed. See api/_catalogSheet.js.
  */
 module.exports = async (req, res) => {
@@ -270,6 +271,22 @@ module.exports = async (req, res) => {
     // (no local download) -- the generated PDF is saved straight to the
     // same public "reports" Storage bucket used for order PDFs, with a
     // history row so it's browsable from the Catalog Sheets tab.
+    if (req.method === 'DELETE' && action === 'delete-catalog-sheet') {
+      const id = Number(req.query.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'A valid id is required' });
+      const { data, error } = await supabase
+        .from('catalog_sheet_history')
+        .delete()
+        .eq('id', id)
+        .select('id');
+      if (error) throw error;
+      // RLS can silently block a delete (no error, zero rows) -- report it.
+      if (!data || data.length === 0) {
+        return res.status(404).json({ error: 'Sheet not found, or the database does not allow deleting catalog sheets.' });
+      }
+      return res.status(200).json({ success: true, id });
+    }
+
     if (req.method === 'POST' && action === 'auto-catalog-sheet') {
       const { kind, generatedBy } = req.body || {};
       if (kind !== 'complete' && kind !== 'weekly') {
